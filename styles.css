@@ -38,7 +38,11 @@ body{
 
 
 /* =====================[ TRECHO 2: STAGE E CONTAINER 360x800 ]===================== */
-/* [DOC] Centraliza o "aparelho" (36rem × 80rem) no viewport e define o container do jogo. */
+/* [DOC] Centraliza o "aparelho" (36rem × 80rem) no viewport e define o container do jogo.
+   [CHANGE]
+   - Adição de tokens de altura por seção no container do app (.game).
+   - Perfis de densidade via [data-density="compact|regular|roomy"] para ajustes rápidos.
+   - As seções usam height com tokens (mantém layout atual), permitindo ajuste fino por densidade. */
 .stage{
   width: 100dvw;    /* [CHANGE] usar dvw para refletir largura útil dinâmica */
   height: 100dvh;
@@ -58,17 +62,50 @@ body{
   flex-direction: column;
   gap: 0.6rem;                /* 6px base */
   overflow: hidden;           /* zero scroll interno */
+
+  /* [CHANGE][STATE] Tokens de altura por seção (perfil "regular") */
+  --h-toprow:   5rem;    /* 50px */
+  --h-stats:   12.8rem;  /* 128px */
+  --h-sec:      4.8rem;  /* 48px  (secstats) */
+  --h-room:    13.2rem;  /* 132px */
+  --h-run:      3.6rem;  /* 36px  (runline) */
+  --h-act:     20rem;    /* 200px (actions) */
+  --h-log:      8.8rem;  /* 88px  */
+  --h-ads:      5.8rem;  /* 58px  */
 }
 
-/* [STATE] Alocação de alturas por seção (base 800px) */
-.toprow    { height: 5rem; }    /* 50px */
-.stats-grid{ height: 12.8rem; } /* 128px */
-.secstats  { height: 4.8rem; }  /* 48px */
-.room      { height: 13.2rem; } /* 132px */
-.runline   { height: 3.6rem; }  /* 36px */
-.actions   { height: 20rem; }   /* 200px */
-.log       { height: 8.8rem; }  /* 88px */
-.ads       { height: 5.8rem; }  /* 58px */
+/* [CHANGE][DOC] Perfis de densidade (override dos tokens acima) */
+.game[data-density="compact"]{
+  --h-toprow:   4.6rem;
+  --h-stats:   12.0rem;
+  --h-sec:      4.4rem;
+  --h-room:    12.4rem;
+  --h-run:      3.2rem;
+  --h-act:     19.2rem;
+  --h-log:      8.0rem;
+  --h-ads:      5.2rem;
+}
+.game[data-density="roomy"]{
+  --h-toprow:   5.4rem;
+  --h-stats:   13.6rem;
+  --h-sec:      5.2rem;
+  --h-room:    14.4rem;
+  --h-run:      4.0rem;
+  --h-act:     20.8rem;
+  --h-log:      9.6rem;
+  --h-ads:      6.4rem;
+}
+
+/* [CHANGE] Seções agora usam tokens de altura
+   (mantém layout atual; permite ajuste de densidade sem tocar nas regras de cada seção) */
+.toprow    { height: var(--h-toprow); }
+.stats-grid{ height: var(--h-stats); }
+.secstats  { height: var(--h-sec); }
+.room      { height: var(--h-room); }
+.runline   { height: var(--h-run); }
+.actions   { height: var(--h-act); }
+.log       { height: var(--h-log); }
+.ads       { height: var(--h-ads); }
 /* =====================[ FIM TRECHO 2 ]===================== */
 
 
@@ -126,10 +163,9 @@ body{
 .xp-fill{
   position: absolute;
   inset: 0 100% 0 0; /* inicia vazia (0%) */
-  background: #999;  /* XP neutra */
+  background: #27ac05;  /* XP neutra */
 }
 /* =====================[ FIM TRECHO 3 ]===================== */
-
 
 /* =====================[ TRECHO 4: BARRAS DE PROGRESSO (COMPARTILHADO) ]===================== */
 .bar{
@@ -147,10 +183,11 @@ body{
 .fill.hp{     background: var(--hp); }
 /* =====================[ FIM TRECHO 4 ]===================== */
 
-
 /* =====================[ TRECHO 5: STATS 2×2 (VIDA, MANA, ENERGIA, SANIDADE) ]===================== */
-/* [DOC] Aplica emojis nos 4 cards de .stats-grid sem alterar HTML/JS (usa :nth-child).
-   Ordem: 1=Vida ❤️, 2=Mana 💧, 3=Energia ⚡, 4=Sanidade 🧠.  */
+/* [DOC]
+   - Grid 2×2 para os stats principais.
+   - [CHANGE] Ícones (emojis) passam a ser definidos por seletor semântico
+     .stat-card[data-stat="..."] em vez de :nth-child; isso reduz acoplamento à ordem dos elementos. */
 .stats-grid{
   display:grid;
   grid-template-columns: 1fr 1fr;
@@ -165,35 +202,41 @@ body{
   background:#fff;
   display:flex; 
   flex-direction:column; 
-  justify-content:center;
+  justify-content: center;
+  user-select: none;
 }
-
 .stat-head{
   display:flex; 
-  align-items:baseline; 
-  justify-content:space-between;
-  font-size:1.4rem; 
-  font-weight:600; 
-  margin-bottom:0.6rem;
+  align-items:center; 
+  justify-content: space-between; 
+  padding: 0 0.4rem;
+}
+.stat-name{
+  font-size: 1.5rem;
+  font-weight: 700;
+  color:#111; 
+  line-height: 1;
+}
+.stat-val{
+  font-size: 1.2rem;
+  font-weight: 600;
+  color:#333; 
 }
 
-.stat-name{ font-size: 1.6rem; color: var(--muted); }
-.stat-val { font-weight:500; color:#505050; }
+.stat-card .bar{ margin-top: 0.6rem; }
 
-
-
-/* Espaço lateral dos ícones (antes e depois) */
+/* Espaço lateral do “ícone” (antes do texto) */
 .stats-grid .stat-name::before{
   display: inline-block;
-  margin-left: 0.25rem;   /* espaço antes do ícone */
   margin-right: 0.35rem;  /* espaço depois do ícone */
+  line-height: 1;
 }
 
-/* Conteúdos já usados */
-.stats-grid .stat-card:nth-child(1) .stat-name::before{ content: "❤️"; } /* VIDA */
-.stats-grid .stat-card:nth-child(2) .stat-name::before{ content: "💧"; } /* MANA */
-.stats-grid .stat-card:nth-child(3) .stat-name::before{ content: "⚡"; } /* ENERGIA */
-.stats-grid .stat-card:nth-child(4) .stat-name::before{ content: "🧠"; } /* SANIDADE */
+/* [CHANGE] Ícones por seletor semântico (sem dependência de ordem) */
+.stats-grid .stat-card[data-stat="vida"]    .stat-name::before{ content: "❤️"; }
+.stats-grid .stat-card[data-stat="mana"]    .stat-name::before{ content: "💧"; }
+.stats-grid .stat-card[data-stat="energia"] .stat-name::before{ content: "⚡"; }
+.stats-grid .stat-card[data-stat="sanidade"] .stat-name::before{ content: "🧠"; }
 /* =====================[ FIM TRECHO 5 ]===================== */
 
 /* =====================[ TRECHO 6: STATUS DO JOGADOR (4 ÍCONES EM EMOJI) ]===================== */
@@ -256,10 +299,18 @@ body{
 
 /* =====================[ TRECHO 7: PAINEL DE SALA / INIMIGO ]===================== */
 .room{
+  /* [CHANGE][DOC] Fundo com imagem declarada via CSS var --room-bg + overlay para legibilidade */
+  --room-bg: none; /* definido em runtime pelo ui.js */
   border: 0.1rem solid var(--border);
   border-radius: var(--radius);
   padding: 0.8rem;
-  background:#fff;
+  background-color:#fff;
+  /* duas camadas: overlay (topo) + imagem (fundo) */
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0.88), rgba(255,255,255,0.88)), var(--room-bg);
+  background-size: auto, cover;
+  background-position: center;
+  background-repeat: no-repeat, no-repeat;
+
   display:flex;
   flex-direction:column;
   justify-content:space-between;
@@ -272,6 +323,17 @@ body{
   font-size: 1.8rem;
   font-weight: 700;
   color: #222;
+}
+
+/* [CHANGE] Descrição padronizada da sala (texto simples) */
+.room-desc{
+  margin: 0.6rem 0 0;           /* pequeno espaço abaixo do título */
+  padding: 0 0.8rem;
+  text-align: center;
+  font-size: 1.45rem;
+  line-height: 1.25;
+  color: #333;
+  user-select: none;
 }
 
 /* Cartão do inimigo (COMBAT) */
@@ -294,7 +356,6 @@ body{
 /* Barra de HP do inimigo (reusa .bar/.fill.hp) */
 .enemy-hp{ height: 1rem; }
 /* =====================[ FIM TRECHO 7 ]===================== */
-
 
 /* =====================[ TRECHO 7.1: RUNLINE (DIA/ANDAR) ]===================== */
 .runline{
@@ -333,37 +394,49 @@ body{
 .btn-primary{ background:#e9e9e9; }
 /* =====================[ FIM TRECHO 8 ]===================== */
 
-/* =====================[ TRECHO 9: LOG (4 LINHAS, SEM SCROLL) ]===================== */
+/* =====================[ TRECHO 9: LOG (4 LINHAS, ADAPTATIVO 4↔3, SEM SCROLL) ]===================== */
 /* [DOC]
-   - Layout de "terminal limpo": cada linha com barra de severidade à esquerda.
-   - 3 níveis: info (azul), mod (âmbar), crit (vermelho).
-   - Zebra sutil para facilitar varredura. Sem timestamps/agrupamento.
+   - Agora o container usa FLEX COLUNA para permitir linhas de altura variável.
+   - O JS tenta renderizar 4 itens; se houver overflow, re-renderiza com 3.
+   - Sem scroll; a "sobra" vertical é distribuída entre os itens via space-between.
+   - Linhas podem quebrar em múltiplas linhas (sem ellipsis).
 */
 .log{
   border: 0.1rem solid var(--border);
   border-radius: var(--radius);
   background:#fff;
-  padding: 0.8rem;
+  padding: 0.8rem;                 /* altura útil = --h-log - 1.6rem */
   display:flex;
-  align-items:center;
-  /* Paleta local de severidade (evita tocar :root) */
+  align-items:stretch;             /* ocupa a altura total internamente */
+  /* Paleta local de severidade (sem alterar :root) */
   --sev-info: #2563eb; /* azul */
   --sev-mod:  #d97706; /* âmbar */
   --sev-crit: #b91c1c; /* vermelho escuro */
 }
 
+/* [CHANGE][WHY] Flex coluna + distribuição da sobra.
+   O JS controla 3 ou 4 itens exibidos e coloca data-lines="3|4" quando útil. */
 .log-view{
   width:100%;
-  line-height: 2.2rem;  /* 4 linhas × 2.2 = 8.8rem */
-  font-size: 1.5rem;    /* leitura mais confortável que 1.4rem */
+  height:100%;
+  display:flex;
+  flex-direction: column;
+  justify-content: space-between;  /* reparte espaço vertical restante */
+  gap: 0;                          /* a separação vem das bordas das linhas */
+  font-size: 1.5rem;
+  line-height: 1.15;               /* ligeiramente maior para legibilidade em múltiplas linhas */
 }
 
+/* [CHANGE] Linhas podem ocupar múltiplas linhas de texto; sem ellipsis. */
 .log-line{
   position: relative;
-  padding: 0.4rem 0.6rem 0.4rem 1rem; /* espaço para a barra */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: block;
+  min-height: 1.8rem;              /* base mínima de altura para linhas curtas */
+  padding: 0.2rem 0.6rem 0.2rem 1rem;
+  white-space: normal;             /* permite quebra de linha */
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;          /* evita “estouro” com palavras longas */
   border-bottom: 0.1rem solid #eee;
   border-left: 0.3rem solid transparent; /* barra de severidade */
 }
@@ -372,11 +445,10 @@ body{
 /* Zebra sutil (não exagerar para não virar ruído) */
 .log-line:nth-child(even){ background:#fafafa; }
 
-/* Cores por severidade (definidas na .log) */
+/* Cores por severidade (se algum dia o curto usar data-sev) */
 .log-line[data-sev="info"]{ border-left-color: var(--sev-info); }
 .log-line[data-sev="mod"] { border-left-color: var(--sev-mod);  }
 .log-line[data-sev="crit"]{ border-left-color: var(--sev-crit); }
-
 /* =====================[ FIM TRECHO 9 ]===================== */
 
 /* =====================[ TRECHO 10: ÁREA ADS / PROMO INTERNA ]===================== */
@@ -391,7 +463,6 @@ body{
   font-weight:600;
 }
 /* =====================[ FIM TRECHO 10 ]===================== */
-
 
 /* =====================[ TRECHO 11: OVERLAY DE LANDSCAPE (BLOQUEIO) ]===================== */
 .rotate-overlay{

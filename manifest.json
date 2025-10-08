@@ -1,18 +1,10 @@
 {
   "name": "Torre da Redenção",
   "short_name": "Torre",
-  "start_url": "./index.html",
-  "scope": "./",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0f0f0f",
-  "theme_color": "#0f0f0f",
-  "icons": [
-    {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    }
-  ],
-  "categories": ["games", "adventure"]
+  "background_color": "#111111",
+  "theme_color": "#111111"
 }

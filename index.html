@@ -18,7 +18,7 @@
   <div class="rotate-overlay">
     <div class="rotate-card">
       <div class="rotate-emoji" aria-hidden="true">📱↻</div>
-      <p>Gire o dispositivo para <strong>retrato</strong>.</p>
+      <p data-i18n="ui.rotate">Gire o dispositivo para <strong>retrato</strong>.</p>
     </div>
   </div>
   <!-- =====================[ FIM TRECHO 2 ]===================== -->
@@ -26,61 +26,76 @@
   <!-- =====================[ TRECHO 3: STAGE & CONTAINER 360x800 ]===================== -->
   <main class="stage">
     <section class="game" aria-label="Protótipo de interface">
-
+  <!-- =====================[ FIM TRECHO 3 ]===================== -->
+   
       <!-- =====================[ TRECHO 4: HEADER + XP (3 COLUNAS) ]===================== -->
       <header class="toprow" aria-label="Topo do jogo">
         <div class="level" aria-label="Nível atual">Level <strong>99</strong></div>
 
         <div class="xp-stack" aria-label="Experiência">
           <div class="xp-label" aria-hidden="true">0/100</div>
-          <div class="xp-bar" role="progressbar" aria-label="Barra de XP" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0">
+          <div class="xp-bar" role="progressbar" data-i18n-aria="ui.stats.xp" aria-label="Barra de XP" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0">
             <div class="xp-fill" style="width:0%"></div>
           </div>
         </div>
 
-        <button class="icon-btn" type="button" aria-label="Menu" title="Menu" disabled>☰</button>
+        <button class="icon-btn" type="button" data-i18n-aria="ui.menu" data-i18n-title="ui.menu" aria-label="Menu" title="Menu" disabled>☰</button>
       </header>
       <!-- =====================[ FIM TRECHO 4 ]===================== -->
 
       <!-- =====================[ TRECHO 5: STATS PRINCIPAIS (VIDA/MANA/ENERGIA/SANIDADE) ]===================== -->
-      <section class="stats-grid" aria-label="Atributos principais do jogador">
-        <article class="stat-card">
-          <div class="stat-head"><span class="stat-name">VIDA</span><span class="stat-val">100/100</span></div>
-          <div class="bar" role="progressbar" aria-label="Vida" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
-            <div class="fill life" style="width:100%"></div>
-          </div>
-        </article>
+            <!-- [CHANGE][DOC] Atributo de densidade no container do app (apenas informativo aqui; definido no TRECHO 2 do CSS) -->
+            <section class="stats-grid" aria-label="Atributos principais do jogador" data-density="regular">
+              <!-- [CHANGE][DOC] Ícones agora são aplicados por seletor semântico data-stat=... (removida dependência de :nth-child) -->
+              <article class="stat-card" data-stat="vida">
+                <div class="stat-head">
+                  <span class="stat-name" data-i18n="ui.stats.hp">VIDA</span>
+                  <span class="stat-val">100/100</span>
+                </div>
+                <div class="bar" role="progressbar" data-i18n-aria="ui.stats.hp" aria-label="Barra de Vida" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+                  <div class="fill life" style="width:100%"></div>
+                </div>
+              </article>
 
-        <article class="stat-card">
-          <div class="stat-head"><span class="stat-name">MANA</span><span class="stat-val">100/100</span></div>
-          <div class="bar" role="progressbar" aria-label="Mana" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
-            <div class="fill mana" style="width:100%"></div>
-          </div>
-        </article>
+              <article class="stat-card" data-stat="mana">
+                <div class="stat-head">
+                  <span class="stat-name" data-i18n="ui.stats.mana">MANA</span>
+                  <span class="stat-val">100/100</span>
+                </div>
+                <div class="bar" role="progressbar" data-i18n-aria="ui.stats.mana" aria-label="Barra de Mana" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+                  <div class="fill mana" style="width:100%"></div>
+                </div>
+              </article>
 
-        <article class="stat-card">
-          <div class="stat-head"><span class="stat-name">ENERGIA</span><span class="stat-val">100/100</span></div>
-          <div class="bar" role="progressbar" aria-label="Energia" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
-            <div class="fill energy" style="width:100%"></div>
-          </div>
-        </article>
+              <article class="stat-card" data-stat="energia">
+                <div class="stat-head">
+                  <span class="stat-name" data-i18n="ui.stats.energy">ENERGIA</span>
+                  <span class="stat-val">100/100</span>
+                </div>
+                <div class="bar" role="progressbar" data-i18n-aria="ui.stats.energy" aria-label="Barra de Energia" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+                  <div class="fill energy" style="width:100%"></div>
+                </div>
+              </article>
 
-        <article class="stat-card">
-          <div class="stat-head"><span class="stat-name">SANIDADE</span><span class="stat-val">100/100</span></div>
-          <div class="bar" role="progressbar" aria-label="Sanidade" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
-            <div class="fill sanity" style="width:100%"></div>
-          </div>
-        </article>
-      </section>
+              <article class="stat-card" data-stat="sanidade">
+                <div class="stat-head">
+                  <span class="stat-name" data-i18n="ui.stats.sanity">SANIDADE</span>
+                  <span class="stat-val">100/100</span>
+                </div>
+                <div class="bar" role="progressbar" data-i18n-aria="ui.stats.sanity" aria-label="Barra de Sanidade" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+                  <div class="fill sanity" style="width:100%"></div>
+                </div>
+              </article>
+            </section>
       <!-- =====================[ FIM TRECHO 5 ]===================== -->
 
       <!-- =====================[ TRECHO 6: STATUS DO JOGADOR (ATAQUE/DEFESA/PRECISÃO/AGILIDADE) ]===================== -->
       <section class="secstats" aria-label="Status do jogador">
         <div class="secstats-grid">
-          <button class="stat-chip stat-chip--atk" type="button" aria-label="Ataque" disabled></button>
-          <button class="stat-chip stat-chip--def" type="button" aria-label="Defesa" disabled></button>
-          <button class="stat-chip stat-chip--acc" type="button" aria-label="Precisão" disabled></button>
-          <button class="stat-chip stat-chip--agi" type="button" aria-label="Agilidade" disabled></button>
+          <button class="stat-chip stat-chip--atk" type="button" data-i18n-aria="ui.attr.atk" aria-label="Ataque" disabled></button>
+          <button class="stat-chip stat-chip--def" type="button" data-i18n-aria="ui.attr.def" aria-label="Defesa" disabled></button>
+          <button class="stat-chip stat-chip--acc" type="button" data-i18n-aria="ui.attr.acc" aria-label="Precisão" disabled></button>
+          <button class="stat-chip stat-chip--agi" type="button" data-i18n-aria="ui.attr.agi" aria-label="Agilidade" disabled></button>
         </div>
       </section>
       <!-- =====================[ FIM TRECHO 6 ]===================== -->
@@ -89,30 +104,34 @@
       <section class="room room--info" aria-label="Sala atual">
         <h2 class="room-title" aria-live="polite">Sala Vazia</h2>
 
+        <!-- [CHANGE][DOC] Descrição simples padronizada da sala (texto puro) -->
+        <p class="room-desc" data-i18n="room.sala_vazia.desc">Uma sala silenciosa e vazia.</p>
+
         <!-- Cartão do inimigo (visível apenas quando o atributo [hidden] for removido via JS) -->
         <article class="enemy-card" hidden>
           <!-- [DOC] enemy-head é um *hook* de layout futuro; hoje não há estilo específico. -->
           <div class="enemy-head">
             <div class="enemy-name" aria-live="polite">Inimigo</div>
-            <div class="enemy-hp" role="progressbar" aria-label="HP do inimigo" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+            <div class="enemy-hp" role="progressbar" data-i18n-aria="ui.stats.hp" aria-label="HP do inimigo" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
               <div class="fill hp" style="width:100%"></div>
             </div>
           </div>
 
           <div class="enemy-stats">
             <div class="secstats-grid" aria-label="Status do inimigo">
-              <div class="stat-chip stat-chip--atk" title="Ataque do inimigo" aria-label="Ataque do inimigo">0</div>
-              <div class="stat-chip stat-chip--def" title="Defesa do inimigo" aria-label="Defesa do inimigo">0</div>
-              <div class="stat-chip stat-chip--acc" title="Precisão do inimigo" aria-label="Precisão do inimigo">0</div>
-              <div class="stat-chip stat-chip--agi" title="Agilidade do inimigo" aria-label="Agilidade do inimigo">0</div>
+              <div class="stat-chip stat-chip--atk" data-i18n-title="ui.attr.atk" title="Ataque do inimigo" aria-label="Ataque do inimigo">0</div>
+              <div class="stat-chip stat-chip--def" data-i18n-title="ui.attr.def" title="Defesa do inimigo" aria-label="Defesa do inimigo">0</div>
+              <div class="stat-chip stat-chip--acc" data-i18n-title="ui.attr.acc" title="Precisão do inimigo" aria-label="Precisão do inimigo">0</div>
+              <div class="stat-chip stat-chip--agi" data-i18n-title="ui.attr.agi" title="Agilidade do inimigo" aria-label="Agilidade do inimigo">0</div>
             </div>
           </div>
         </article>
       </section>
       <!-- =====================[ FIM TRECHO 7 ]===================== -->
 
+
       <!-- =====================[ TRECHO 7.1: RUNLINE (DIA / ANDAR) ]===================== -->
-      <section class="runline" aria-label="Resumo da run (Dia e Andar)">
+      <section class="runline" data-i18n-aria="ui.runline" aria-label="Resumo da run (Dia e Andar)">
         <span class="runline-day">Dia 1</span>
         <span class="runline-floor">Andar 1</span>
       </section>
@@ -121,7 +140,7 @@
       <!-- =====================[ TRECHO 8: AÇÕES PRINCIPAIS ]===================== -->
       <!-- [DOC] Os quatro botões abaixo são **slots de ação**. IDs fixos indicam APENAS a posição (1–4).
            O significado (rótulo e efeito) é definido dinamicamente pelo JS conforme a sala. -->
-      <section class="actions" aria-label="Ações principais">
+      <section class="actions" data-i18n-aria="ui.actions" aria-label="Ações principais">
         <button id="act-1" class="btn" type="button" disabled>???</button>
         <button id="act-2" class="btn" type="button" disabled>???</button>
         <button id="act-3" class="btn" type="button" disabled>???</button>
@@ -130,12 +149,8 @@
       <!-- =====================[ FIM TRECHO 8 ]===================== -->
 
       <!-- =====================[ TRECHO 9: LOG (4 LINHAS, SEM SCROLL) ]===================== -->
-      <section class="log" aria-label="Mensagens">
+      <section class="log" data-i18n-aria="ui.log" aria-label="Mensagens">
         <div class="log-view" role="log" aria-live="polite">
-          <div class="log-line" title="Mensagem de log um">Mensagem de log um</div>
-          <div class="log-line" title="Mensagem de log dois">Mensagem de log dois</div>
-          <div class="log-line" title="Mensagem de log três">Mensagem de log três</div>
-          <div class="log-line" title="Mensagem de log quatro">Mensagem de log quatro</div>
         </div>
       </section>
       <!-- =====================[ FIM TRECHO 9 ]===================== -->
@@ -143,10 +158,10 @@
       <!-- =====================[ TRECHO 9B: MODAL — HISTÓRICO DE LOGS (50vh, sem título) ]===================== -->
       <!-- [DOC] Overlay com dialog rolável (50vh), largura igual ao painel de log, e botão redondo abaixo. -->
       <div class="modal-overlay" id="log-modal" aria-hidden="true" hidden>
-        <div class="modal-dialog" role="dialog" aria-modal="true" aria-label="Histórico de logs">
-          <div class="modal-body" id="log-modal-body" tabindex="0" aria-label="Histórico de mensagens"></div>
+        <div class="modal-dialog" role="dialog" aria-modal="true" data-i18n-aria="ui.log" aria-label="Histórico de logs">
+          <div class="modal-body" id="log-modal-body" tabindex="0" data-i18n-aria="ui.log" aria-label="Histórico de mensagens"></div>
         </div>
-        <button type="button" class="modal-close modal-close-round" aria-label="Fechar">✕</button>
+        <button type="button" class="modal-close modal-close-round" data-i18n-aria="ui.close" aria-label="Fechar">✕</button>
       </div>
       <!-- =====================[ FIM TRECHO 9B ]===================== -->
 
@@ -154,26 +169,8 @@
       <section class="ads" aria-label="Espaço promocional">ADS</section>
       <!-- =====================[ FIM TRECHO 10 ]===================== -->
 
-      <!-- =====================[ TRECHO 11: Scripts ]===================== -->
-      <!-- [CHANGE][DOC] Módulo de idiomas 100% offline (sem fetch/XHR), aplica traduções no boot -->
-      <script src="i18n.js" defer></script>
-      <script src="ui.js" defer></script>
-      <script src="game.js" defer></script>
-      
-      <!-- [DOC] Registro do Service Worker para PWA offline (escopo relativo à pasta atual) -->
-      <script>
-      (function() {
-        if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-          window.addEventListener('load', function() {
-            try {
-              navigator.serviceWorker.register('./sw.js', { scope: './' });
-            } catch (e) {
-              /* silencioso por design */
-            }
-          });
-        }
-      })();
-      </script>
+      <!-- =====================[ TRECHO 11: index.html - scripts em módulos ]===================== -->
+      <script type="module" src="./main.js"></script>
       <!-- =====================[ FIM TRECHO 11 ]===================== -->
 
     </section>
