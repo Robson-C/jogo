@@ -1,21 +1,9 @@
-/* =====================[ TRECHO 1: engine.js - Render/Actions + Effect Runner ]===================== */
+/* =====================[ TRECHO 1: Cabeçalho, Imports e Constantes ]===================== */
 /**
  * [DOC]
- * - Renderiza a sala atual (título, descrição e ações) usando i18n.
- * - Roles:
- *    - "explore" → sorteia **qualquer** sala (inclui a atual), uniforme e determinístico.
- *    - "act"     → executa efeitos e permanece na sala.
- * - Effect Runner mínimo padronizado.
- * [CHANGE] Integração com i18n, log estruturado e HUD.
- * [CHANGE] Mecanismo especial para 'sala_armadilha':
- *   - Ao entrar, 'explorar' fica desativado.
- *   - Após executar uma ação não-explorar, todas as não-explorar desativam e 'explorar' habilita.
- * [CHANGE] Game Over por exaustão (energia efetiva = 0) → sala "Fim de Jogo".
- * [CHANGE] Aplica descrição e imagem de background por sala.
- * [NEW]    Seleção determinística de variação de descrição para 'sala_vazia' (7 opções),
- *          baseada em seed + roomId + dia, sem consumir RNG principal.
- * [NEW]    Loga a descrição da sala **apenas na entrada de uma nova sala** (explorar/restart),
- *          evitando duplicatas em re-renderizações.
+ * Núcleo de fluxo do jogo: render de sala, execução de ações e transições.
+ * Mantém compatibilidade com state/ui/i18n/rooms e não inicia rede (offline).
+ * [CHANGE] Arquivo foi apenas reorganizado em TRECHOS; lógica inalterada.
  */
 import {
   STATE, nextRandom, getLogLastNTexts, appendLog,
@@ -27,13 +15,20 @@ import { setRoomTitle, setActionLabel, enableAction, getActionLabel, renderLog, 
 import { ROOMS, ROOM_IDS } from './rooms.js';
 import { t } from './i18n.js';
 
+/* [STATE] Lock para anti multi-input (desbloqueado no próximo rAF) */
 let inputLocked = false;
 
+/* ID canônico de sala especial */
 const GAME_OVER_ROOM_ID = 'fim_de_jogo';
+/* =====================[ FIM TRECHO 1 ]===================== */
 
-/* -------------------------------------------------------------------------------------------------
- * [STATE] Controle de uso de ações por dia (volátil, não persistido)
- * ------------------------------------------------------------------------------------------------- */
+
+/* =====================[ TRECHO 2: Controle de Uso de Ações por Dia ]===================== */
+/**
+ * [DOC]
+ * Controla ações "act" 1x por dia e a regra da sala armadilha.
+ * Estruturas são voláteis (não persistidas).
+ */
 if (!STATE.actionsUsed) {
   STATE.actionsUsed = new Set();
 }
@@ -46,13 +41,15 @@ function resetActionUsageForToday() { STATE.actionsUsed.clear(); STATE.actionsLa
 function ensureActionUsageDaySync() { const d = getDay(); if (STATE.actionsLastResetDay !== d) resetActionUsageForToday(); }
 function isActionUsedToday(roomId, idx) { ensureActionUsageDaySync(); return STATE.actionsUsed.has(actionKey(roomId, idx)); }
 function markActionUsedToday(roomId, idx) { ensureActionUsageDaySync(); STATE.actionsUsed.add(actionKey(roomId, idx)); }
+/* =====================[ FIM TRECHO 2 ]===================== */
 
-/* [DOC] Flags de salas especiais */
-function isTrapRoom(roomId) { return String(roomId) === 'sala_armadilha'; }
-function isGameOverRoom(roomId) { return String(roomId) === GAME_OVER_ROOM_ID; }
 
-/* ---------------------- Variedade determinística de descrição ---------------------- */
-/** [DOC] Hash FNV-1a 32-bit simples (local) — evita consumir `nextRandom`. */
+/* =====================[ TRECHO 3: Descrições — Hash e Variação Determinística ]===================== */
+/**
+ * [DOC]
+ * Seleção determinística de variação de descrição para 'sala_vazia', baseada em seed+roomId+dia,
+ * sem consumir o RNG principal (nextRandom).
+ */
 function _hash32(str) {
   let h = 0x811c9dc5 >>> 0;
   for (let i = 0; i < str.length; i++) {
@@ -61,11 +58,6 @@ function _hash32(str) {
   }
   return h >>> 0;
 }
-/** [DOC]
- * Retorna uma descrição alternativa para uma sala, se disponível.
- * Implementado para 'sala_vazia': usa 7 variações `room.sala_vazia.desc.1..7`.
- * Cálculo: idx = (hash(seed|roomId|day) % 7) + 1 — determinístico por dia.
- */
 function pickRoomDescVariant(roomId) {
   if (roomId !== 'sala_vazia') return null;
   const seed = String(STATE.seed || '');
@@ -76,37 +68,44 @@ function pickRoomDescVariant(roomId) {
   const val = t(key, '');
   return (val && val !== key) ? val : null; // fallback seguro
 }
+/* =====================[ FIM TRECHO 3 ]===================== */
 
-/* ---------------------- [NEW] Logue a entrada de uma sala ---------------------- */
+
+/* =====================[ TRECHO 4: Utilitários de Sala (flags, log, transições) ]===================== */
+/** [DOC] Predicados de tipo de sala */
+function isTrapRoom(roomId)    { return String(roomId) === 'sala_armadilha'; }
+function isGameOverRoom(roomId){ return String(roomId) === GAME_OVER_ROOM_ID; }
+
 /**
- * [DOC] Registra no log a **descrição textual** da sala.
+ * [DOC] Registra no log a **descrição textual** da sala recém-entrante.
  * - Usa variação determinística para 'sala_vazia' (pickRoomDescVariant).
  * - Para demais salas, usa `descKey` com fallback do catálogo.
  * - Não consome RNG do jogo; side-effect: apenas appendLog().
  */
 function logRoomEntry(roomId) {
   const room = ROOMS[roomId] || ROOMS['sala_vazia'];
-  // tenta variação (sala_vazia) → descKey → fallback `desc` → string vazia
   const alt = pickRoomDescVariant(roomId);
   const baseDesc = room.descKey ? t(room.descKey, room.desc || '') : (room.desc || '');
   const msg = String(alt || baseDesc || '').trim();
   if (msg) appendLog({ sev: 'info', msg });
 }
 
-/* [DOC] Reinicia a run (mantém seed/RNG); limpa mods; reseta jogador e Dia; volta à sala inicial. */
+/**
+ * [DOC] Reinicia a run (mantém seed/RNG); limpa mods; reseta jogador e Dia; volta à sala inicial.
+ * [WHY] Loga descrição ao entrar na sala inicial após restart, sem duplicar em re-render.
+ */
 function restartRun() {
   clearAllModifiers();
   initPlayerDefaults();
   setDay(1);
   resetActionUsageForToday();
   STATE.currentRoomId = 'sala_vazia';
-  /* [CHANGE][WHY] Logar descrição ao entrar na sala inicial após restart, sem duplicar em re-render. */
   logRoomEntry(STATE.currentRoomId);
   renderRoom();
   renderHUD();
 }
 
-/* [DOC] Checa energia efetiva; se 0 → entra na sala de Game Over. Retorna true se entrou. */
+/** [DOC] Game Over por energia efetiva 0 → entra na sala de Fim de Jogo; retorna true se entrou. */
 function checkGameOverByEnergy() {
   const energyEff = getEffectiveStatus('energia');
   if (energyEff <= 0 && !isGameOverRoom(STATE.currentRoomId)) {
@@ -116,14 +115,22 @@ function checkGameOverByEnergy() {
   }
   return false;
 }
+/* =====================[ FIM TRECHO 4 ]===================== */
 
-/** Renderiza título, descrição e botões da sala atual (com i18n) */
+
+/* =====================[ TRECHO 5: Renderização da Sala (Título, Descrição, Ações) ]===================== */
+/**
+ * [DOC]
+ * - Aplica título (i18n), descrição (variação para sala_vazia) e background declarativo.
+ * - Configura os 4 botões conforme a lógica da sala e do dia.
+ * - Sala de Game Over: apenas "Jogar Novamente" no slot 4.
+ */
 export function renderRoom() {
   const room = ROOMS[STATE.currentRoomId] || ROOMS['sala_vazia'];
   const trap = isTrapRoom(STATE.currentRoomId);
   const isGO = isGameOverRoom(STATE.currentRoomId);
 
-  // Título (com i18n). Para Game Over, inclui "Pontuação: 0".
+  // Título
   if (isGO) {
     const base = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || 'Fim de Jogo');
     setRoomTitle(`${base} — Pontuação: 0`);
@@ -132,17 +139,17 @@ export function renderRoom() {
     setRoomTitle(title);
   }
 
-  // Descrição: variação determinística em 'sala_vazia', senão fallback padrão.
+  // Descrição
   const altDesc = pickRoomDescVariant(STATE.currentRoomId);
   const desc = altDesc != null
     ? altDesc
     : (room.descKey ? t(room.descKey, room.desc || '') : (room.desc || ''));
   setRoomDesc(desc || '');
 
-  // Background declarativo por sala (URL local ou 'none')
+  // Background
   setRoomBackground(room.bg || null);
 
-  // Sala de Game Over: 3 botões vazios/desativados + slot 4 "Jogar Novamente"
+  // Game Over: 3 inativos + "Jogar Novamente"
   if (isGO) {
     for (let i = 0; i < 3; i++) { setActionLabel(i, ''); enableAction(i, false); }
     setActionLabel(3, t('action.jogar_novamente', 'Jogar Novamente'));
@@ -150,7 +157,7 @@ export function renderRoom() {
     return;
   }
 
-  // Lógica normal (incl. sala armadilha)
+  // Regras normais (inclui sala armadilha)
   let anyNonExploreUsed = false;
   if (trap) {
     for (let j = 0; j < 4; j++) {
@@ -168,19 +175,15 @@ export function renderRoom() {
       const label = a.labelKey ? t(a.labelKey, a.label || '') : (a.label || '');
       setActionLabel(i, label);
 
-      // Habilitação padrão
       let enabled = true;
-
-      // Regras especiais: sala de armadilha
       if (trap) {
         const role = a.role || 'act';
         if (role === 'explore') {
-          enabled = anyNonExploreUsed;        // só habilita após escolher uma das outras
+          enabled = anyNonExploreUsed;        // só habilita após usar uma não-explorar
         } else {
           enabled = !anyNonExploreUsed && !isActionUsedToday(STATE.currentRoomId, i);
         }
       }
-
       enableAction(i, enabled);
     } else {
       setActionLabel(i, '???');
@@ -188,8 +191,15 @@ export function renderRoom() {
     }
   }
 }
+/* =====================[ FIM TRECHO 5 ]===================== */
 
-/** Effect Runner mínimo (defensivo) */
+
+/* =====================[ TRECHO 6: Effect Runner (execução defensiva de efeitos) ]===================== */
+/**
+ * [DOC]
+ * Interpreta efeitos declarativos e aplica no estado,
+ * logando mudanças com severidade "mod".
+ */
 function runEffects(effects, labelForLog) {
   if (!effects || !effects.length) return;
   for (let i = 0; i < effects.length; i++) {
@@ -197,7 +207,10 @@ function runEffects(effects, labelForLog) {
     if (!eff || typeof eff.type !== 'string') continue;
 
     switch (eff.type) {
-      case 'noop': { if (labelForLog) appendLog({ sev: 'info', msg: `${String(labelForLog)}` }); break; }
+      case 'noop': {
+        if (labelForLog) appendLog({ sev: 'info', msg: `${String(labelForLog)}` });
+        break;
+      }
       case 'statusDelta': {
         const { key, delta } = eff;
         if (typeof key === 'string' && Number.isFinite(delta)) {
@@ -238,22 +251,42 @@ function runEffects(effects, labelForLog) {
         }
         break;
       }
-      case 'removeModById': { const { id } = eff; if (typeof id === 'string') { removeModifierById(id); appendLog({ sev:'mod', msg:`${String(labelForLog||'')}` }); } break; }
-      case 'removeModsBySource': { const { source } = eff; if (typeof source === 'string') { removeModifiersBySource(source); appendLog({ sev:'mod', msg:`${String(labelForLog||'')}` }); } break; }
-      case 'removeModsByTag': { const { tag } = eff; if (typeof tag === 'string') { removeModifiersByTag(tag); appendLog({ sev:'mod', msg:`${String(labelForLog||'')}` }); } break; }
+      case 'removeModById': {
+        const { id } = eff;
+        if (typeof id === 'string') { removeModifierById(id); appendLog({ sev:'mod', msg:`${String(labelForLog||'')}` }); }
+        break;
+      }
+      case 'removeModsBySource': {
+        const { source } = eff;
+        if (typeof source === 'string') { removeModifiersBySource(source); appendLog({ sev:'mod', msg:`${String(labelForLog||'')}` }); }
+        break;
+      }
+      case 'removeModsByTag': {
+        const { tag } = eff;
+        if (typeof tag === 'string') { removeModifiersByTag(tag); appendLog({ sev:'mod', msg:`${String(labelForLog||'')}` }); }
+        break;
+      }
       default: { break; }
     }
   }
 }
+/* =====================[ FIM TRECHO 6 ]===================== */
 
-/** Wrapper anti multi-input */
+
+/* =====================[ TRECHO 7: Input Lock e Dispatcher de Ações ]===================== */
+/**
+ * [DOC]
+ * - `withInputLock` evita múltiplos cliques simultâneos.
+ * - `handleAction` executa a ação (0..3), aplica custos/efeitos,
+ *   sorteia próxima sala em "explore", loga descrição da nova sala,
+ *   atualiza HUD e log curto.
+ */
 function withInputLock(fn) {
   if (inputLocked) return;
   inputLocked = true;
   try { fn(); } finally { requestAnimationFrame(() => { inputLocked = false; }); }
 }
 
-/** Ação do usuário: idx ∈ [0..3] */
 export function handleAction(idx) {
   withInputLock(() => {
     ensureActionUsageDaySync();
@@ -275,7 +308,7 @@ export function handleAction(idx) {
     const role = action.role || 'act';
 
     if (role !== 'explore' && isActionUsedToday(STATE.currentRoomId, idx)) {
-      return; // 1x/dia por ação de 'act'
+      return; // 1x/dia por ação 'act'
     }
     if (role !== 'explore') {
       markActionUsedToday(STATE.currentRoomId, idx);
@@ -283,15 +316,12 @@ export function handleAction(idx) {
 
     runEffects(action.effects || [], labelResolved);
 
-    // Sala de armadilha: após executar QUALQUER ação não-explorar,
-    // marca todas as não-explorar como usadas e habilita 'explorar'.
+    // Sala armadilha: após qualquer 'act', todas as 'act' contam como usadas
     if (isTrapRoom(STATE.currentRoomId) && role !== 'explore') {
       for (let j = 0; j < 4; j++) {
         const aj = room.actions?.[j];
         const rj = aj ? (aj.role || 'act') : 'act';
-        if (aj && rj !== 'explore') {
-          markActionUsedToday(STATE.currentRoomId, j);
-        }
+        if (aj && rj !== 'explore') markActionUsedToday(STATE.currentRoomId, j);
       }
       renderRoom();
     }
@@ -300,12 +330,12 @@ export function handleAction(idx) {
       // Custo padrão: -10 energia
       PlayerAPI.addStatus('energia', -10);
 
-      // XP variável 5..8 (no sorteio efetivo, não no clique)
+      // XP variável 5..8
       const xpGain = 5 + Math.floor(nextRandom() * 4); // 5..8
       PlayerAPI.addXP(xpGain);
       appendLog({ sev: 'mod', msg: `+${xpGain} XP` });
 
-      // Avança o dia e reseta uso de ações
+      // Avança o dia, reseta uso de ações
       addDay(1);
       setRunlineDay(getDay());
       resetActionUsageForToday();
@@ -314,8 +344,7 @@ export function handleAction(idx) {
       const nextId = ROOM_IDS[Math.floor(nextRandom() * ROOM_IDS.length)] || STATE.currentRoomId;
       STATE.currentRoomId = nextId;
 
-      /* [CHANGE][WHY] Logar a descrição **na entrada** da nova sala (uma vez),
-         antes do render, para que o log curto/ modal mostre o ambiente visitado. */
+      // Loga descrição ao entrar na nova sala (evita duplicatas)
       logRoomEntry(nextId);
 
       renderRoom();
@@ -332,4 +361,4 @@ export function handleAction(idx) {
     renderLog(getLogLastNTexts(4));
   });
 }
-/* =====================[ FIM TRECHO 1 ]===================== */
+/* =====================[ FIM TRECHO 7 ]===================== */
