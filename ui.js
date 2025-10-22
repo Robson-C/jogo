@@ -277,11 +277,10 @@ export function setRunlineDay(n) {
 /**
  * [DOC]
  * - Clique no bloco .log abre modal (#log-modal) com as **últimas 100 entradas**.
- * - Corpo rolável (CSS já cobre); largura do dialog casa com a largura do bloco .log.
- * - Fechamento por botão ✕, clique no backdrop e tecla ESC.
- * - Acessibilidade: foco vai para o corpo do modal e é restaurado ao fechar; body sem scroll.
- * [WHY] Evita o warning "Blocked aria-hidden..." garantindo que o foco saia do overlay
- *       antes de aplicar aria-hidden/hidden, com reforço via `inert` e rAF.
+ * - Corpo rolável; largura do dialog casa com a largura do bloco .log.
+ * - Fechamento por botão ✕, backdrop e ESC.
+ * - Acessibilidade: foco vai para o corpo do modal e é restaurado ao fechar.
+ * [CHANGE] Prefixo apenas no modal: se o item tiver ctx.day, mostra "[Dia N] " antes da mensagem.
  */
 function _ensureModalEls() {
   if (!_modal.overlay)   _modal.overlay  = document.getElementById('log-modal');
@@ -315,10 +314,20 @@ function _fillModalWithLogs() {
     const line = document.createElement('div');
     line.className = 'modal-log-line';
     if (it && typeof it.sev === 'string') line.setAttribute('data-sev', it.sev);
-    line.textContent = (it && typeof it.msg === 'string') ? it.msg : '';
+
+    // [CHANGE] Prefixo de dia somente no modal
+    let prefix = '';
+    try {
+      const d = it && it.ctx && Number.isFinite(it.ctx.day) ? Math.max(1, Math.floor(it.ctx.day)) : null;
+      if (d !== null) prefix = `[Dia ${d}] `;
+    } catch (_) {}
+
+    const msgText = (it && typeof it.msg === 'string') ? it.msg : '';
+    line.textContent = prefix + msgText;
+
     _modal.body.appendChild(line);
   }
-  // Foco inicial no corpo para leitores de tela/teclado
+  // Foco inicial no corpo
   try { _modal.body.focus(); } catch (_) {}
 }
 
@@ -326,33 +335,26 @@ function _openLogModal() {
   _ensureModalEls();
   if (!_modal.overlay) return;
 
-  // Garantir que o overlay possa receber foco/teclas
   try { _modal.overlay.removeAttribute('inert'); } catch (_) {}
 
   _setDialogWidthToLog();
   _fillModalWithLogs();
 
-  // Travar scroll do body e mostrar overlay
   _modal.prevFocus = document.activeElement || null;
   document.body.classList.add('no-scroll');
   _modal.overlay.removeAttribute('hidden');
   _modal.overlay.setAttribute('aria-hidden', 'false');
 
-  // ESC fecha
   document.addEventListener('keydown', _onEscClose, { passive: true });
 }
 
 /**
- * [CHANGE][WHY] Para eliminar o warning "Blocked aria-hidden on an element because its descendant retained focus":
- * 1) Se o foco atual estiver dentro do overlay, aplicamos blur e restauramos foco fora.
- * 2) Marcamos o overlay como `inert` (previne foco imediato).
- * 3) Aplicamos aria-hidden/hidden no próximo frame (rAF), quando o foco já saiu do overlay.
+ * [WHY] Evita warning de focus ao ocultar overlay.
  */
 function _closeLogModal() {
   _ensureModalEls();
   if (!_modal.overlay) return;
 
-  // 1) Se o foco estiver dentro do overlay, remover o foco e restaurar fora
   try {
     const active = document.activeElement;
     if (active && _modal.overlay.contains(active)) {
@@ -360,7 +362,6 @@ function _closeLogModal() {
       let restored = false;
       if (_modal.prevFocus && typeof _modal.prevFocus.focus === 'function') {
         try {
-          // Evita restaurar foco para algo DENTRO do overlay por engano
           if (!_modal.overlay.contains(_modal.prevFocus)) {
             _modal.prevFocus.focus();
             restored = true;
@@ -368,20 +369,14 @@ function _closeLogModal() {
         } catch (_) {}
       }
       if (!restored) {
-        try {
-          // Fallback seguro: body recebe foco temporariamente
-          document.body.setAttribute('tabindex', '-1');
-          document.body.focus();
-        } catch (_) {}
+        try { document.body.setAttribute('tabindex', '-1'); document.body.focus(); } catch (_) {}
         try { document.body.removeAttribute('tabindex'); } catch (_) {}
       }
     }
   } catch (_) {}
 
-  // 2) Prevenir que o overlay ou seus filhos recuperem foco imediatamente
   try { _modal.overlay.setAttribute('inert', ''); } catch (_) {}
 
-  // 3) Esconder e marcar aria-hidden no PRÓXIMO FRAME (após a movimentação de foco)
   requestAnimationFrame(() => {
     try {
       _modal.overlay.setAttribute('aria-hidden', 'true');
@@ -402,18 +397,15 @@ function _bindLogModalHandlers() {
   if (_modal.bound) return;
   _ensureModalEls();
 
-  // Click no bloco do log abre o modal
   const logBox = document.querySelector('.log');
   if (logBox) {
     logBox.addEventListener('click', () => _openLogModal(), { passive: true });
   }
 
-  // Botão ✕
   if (_modal.closeBtn) {
     _modal.closeBtn.addEventListener('click', () => _closeLogModal(), { passive: true });
   }
 
-  // Clique no backdrop fecha (ignora cliques dentro do dialog)
   if (_modal.overlay) {
     _modal.overlay.addEventListener('click', (ev) => {
       if (ev.target === _modal.overlay) _closeLogModal();

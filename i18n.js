@@ -57,8 +57,8 @@ export const LOCALES = {
     'action.jogar_novamente': 'Jogar Novamente',
 
     // --- Mensagens iniciais (intro) ---
-    'intro.1': 'Você acorda em um local com pouca luz.',
-    'intro.2': 'Não lembra quem é... nem onde está...',
+    'intro.1': '...',
+    'intro.2': 'Você não lembra quem é... nem onde está...',
     'intro.3': 'Parece uma sala vazia e abandonada há muito tempo.'
   }
 };

@@ -3,13 +3,21 @@
  * [DOC]
  * Núcleo de fluxo do jogo: render de sala, execução de ações e transições.
  * Mantém compatibilidade com state/ui/i18n/rooms e não inicia rede (offline).
- * [CHANGE] Arquivo foi apenas reorganizado em TRECHOS; lógica inalterada.
+ * [CHANGE] Política de log MINIMALISTA (mantida):
+ *  - NÃO logar descrição de sala.
+ *  - 1 linha por ação: "<Evento>:" (sempre) + efeitos agregados se houver.
+ *  - Efeitos "noop" não geram mensagens de efeito.
+ * [CHANGE] Runner ampliado com tipos:
+ *  - statusDeltaPctOfMax { key:'energia', pct:0.8 }
+ *  - xpDeltaRange { min:5, max:10 }
+ * [CHANGE] Explorar: **remove XP**; mantém apenas **-10 Energia**.
  */
 import {
   STATE, nextRandom, getLogLastNTexts, appendLog,
   PlayerAPI, addModifier,
   removeModifierById, removeModifiersBySource, removeModifiersByTag,
-  addDay, getDay, setDay, initPlayerDefaults, clearAllModifiers, getEffectiveStatus
+  addDay, getDay, setDay, initPlayerDefaults, clearAllModifiers,
+  getEffectiveStatus, getEffectiveStatusMax // [CHANGE] novo import para pct do máximo
 } from './state.js';
 import { setRoomTitle, setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, renderHUD, setRoomDesc, setRoomBackground } from './ui.js';
 import { ROOMS, ROOM_IDS } from './rooms.js';
@@ -71,36 +79,26 @@ function pickRoomDescVariant(roomId) {
 /* =====================[ FIM TRECHO 3 ]===================== */
 
 
-/* =====================[ TRECHO 4: Utilitários de Sala (flags, log, transições) ]===================== */
+/* =====================[ TRECHO 4: Utilitários de Sala (flags, transições) ]===================== */
 /** [DOC] Predicados de tipo de sala */
 function isTrapRoom(roomId)    { return String(roomId) === 'sala_armadilha'; }
 function isGameOverRoom(roomId){ return String(roomId) === GAME_OVER_ROOM_ID; }
 
 /**
- * [DOC] Registra no log a **descrição textual** da sala recém-entrante.
- * - Usa variação determinística para 'sala_vazia' (pickRoomDescVariant).
- * - Para demais salas, usa `descKey` com fallback do catálogo.
- * - Não consome RNG do jogo; side-effect: apenas appendLog().
+ * [DOC][CHANGE] Antes registrava a descrição da sala no log. Agora **NÃO LOGA NADA**.
+ * A descrição é exibida somente na UI via `renderRoom()`.
  */
-function logRoomEntry(roomId) {
-  const room = ROOMS[roomId] || ROOMS['sala_vazia'];
-  const alt = pickRoomDescVariant(roomId);
-  const baseDesc = room.descKey ? t(room.descKey, room.desc || '') : (room.desc || '');
-  const msg = String(alt || baseDesc || '').trim();
-  if (msg) appendLog({ sev: 'info', msg });
+function logRoomEntry(/* roomId */) {
+  /* intencionalmente vazio (política minimalista de log) */
 }
 
-/**
- * [DOC] Reinicia a run (mantém seed/RNG); limpa mods; reseta jogador e Dia; volta à sala inicial.
- * [WHY] Loga descrição ao entrar na sala inicial após restart, sem duplicar em re-render.
- */
+/** [DOC] Reinicia a run (mantém seed/RNG); limpa mods; reseta jogador e Dia; volta à sala inicial. */
 function restartRun() {
   clearAllModifiers();
   initPlayerDefaults();
   setDay(1);
   resetActionUsageForToday();
   STATE.currentRoomId = 'sala_vazia';
-  logRoomEntry(STATE.currentRoomId);
   renderRoom();
   renderHUD();
 }
@@ -133,13 +131,13 @@ export function renderRoom() {
   // Título
   if (isGO) {
     const base = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || 'Fim de Jogo');
-    setRoomTitle(`${base} — Pontuação: 0`);
+    setRoomTitle(`${base} — Pontuação: 0`); // [TODO] pontuação futura
   } else {
     const title = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || '');
     setRoomTitle(title);
   }
 
-  // Descrição
+  // Descrição (UI apenas; sem log)
   const altDesc = pickRoomDescVariant(STATE.currentRoomId);
   const desc = altDesc != null
     ? altDesc
@@ -194,28 +192,56 @@ export function renderRoom() {
 /* =====================[ FIM TRECHO 5 ]===================== */
 
 
-/* =====================[ TRECHO 6: Effect Runner (execução defensiva de efeitos) ]===================== */
+/* =====================[ TRECHO 6: Effect Runner (execução + coleta de mensagens) ]===================== */
 /**
  * [DOC]
- * Interpreta efeitos declarativos e aplica no estado,
- * logando mudanças com severidade "mod".
+ * Interpreta efeitos declarativos e aplica no estado.
+ * Retorna lista de mensagens de efeito para agregação (1 linha por ação).
+ * [CHANGE] Suporta:
+ *  - statusDeltaPctOfMax { key, pct }   → floor(pct * maxEfetivo(key)) aplicado em status
+ *  - xpDeltaRange { min, max }          → inteiro uniforme [min..max]
+ * Mantidos:
+ *  - noop, statusDelta, atributoDelta, statusMaxDelta, xpDelta, addMod, removeMod*
  */
-function runEffects(effects, labelForLog) {
-  if (!effects || !effects.length) return;
+function runEffectsCollectMessages(effects) {
+  const msgs = [];
+  if (!effects || !effects.length) return msgs;
+
+  const STAT_LABEL = { vida:'Vida', energia:'Energia', mana:'Mana', sanidade:'Sanidade' };
+  const ATR_LABEL  = { ataque:'Ataque', defesa:'Defesa', precisao:'Precisão', agilidade:'Agilidade' };
+
+  const toInt = (n) => Math.trunc(Number(n) || 0);
+
   for (let i = 0; i < effects.length; i++) {
     const eff = effects[i];
     if (!eff || typeof eff.type !== 'string') continue;
 
     switch (eff.type) {
       case 'noop': {
-        if (labelForLog) appendLog({ sev: 'info', msg: `${String(labelForLog)}` });
+        // não gera mensagem
         break;
       }
       case 'statusDelta': {
         const { key, delta } = eff;
         if (typeof key === 'string' && Number.isFinite(delta)) {
           PlayerAPI.addStatus(key, delta);
-          appendLog({ sev: 'mod', msg: `${String(labelForLog || '')}` });
+          const label = STAT_LABEL[key] || key;
+          msgs.push(`${delta >= 0 ? '+' : ''}${toInt(delta)} ${label}`);
+        }
+        break;
+      }
+      case 'statusDeltaPctOfMax': { // [CHANGE] novo tipo
+        const { key, pct } = eff;
+        if (typeof key === 'string' && Number.isFinite(pct)) {
+          const maxEff = getEffectiveStatusMax(key);
+          const delta = Math.floor(Math.max(0, pct) * Math.max(0, maxEff));
+          if (delta !== 0) {
+            PlayerAPI.addStatus(key, delta);
+            const label = STAT_LABEL[key] || key;
+            msgs.push(`+${toInt(delta)} ${label}`);
+          } else {
+            // delta 0 → sem mensagem (mantém política minimalista)
+          }
         }
         break;
       }
@@ -223,7 +249,8 @@ function runEffects(effects, labelForLog) {
         const { key, delta } = eff;
         if (typeof key === 'string' && Number.isFinite(delta)) {
           PlayerAPI.addAtributo(key, delta);
-          appendLog({ sev: 'mod', msg: `${String(labelForLog || '')}` });
+          const label = ATR_LABEL[key] || key;
+          msgs.push(`${delta >= 0 ? '+' : ''}${toInt(delta)} ${label}`);
         }
         break;
       }
@@ -231,7 +258,8 @@ function runEffects(effects, labelForLog) {
         const { key, delta } = eff;
         if (typeof key === 'string' && Number.isFinite(delta)) {
           PlayerAPI.addStatusMax(key, delta);
-          appendLog({ sev: 'mod', msg: `${String(labelForLog || '')}` });
+          const label = STAT_LABEL[key] || key;
+          msgs.push(`${delta >= 0 ? '+' : ''}${toInt(delta)} Máx. ${label}`);
         }
         break;
       }
@@ -239,7 +267,18 @@ function runEffects(effects, labelForLog) {
         const { amount } = eff;
         if (Number.isFinite(amount)) {
           PlayerAPI.addXP(amount);
-          appendLog({ sev: 'mod', msg: `${String(labelForLog || '')}` });
+          msgs.push(`${amount >= 0 ? '+' : ''}${toInt(amount)} XP`);
+        }
+        break;
+      }
+      case 'xpDeltaRange': { // [CHANGE] novo tipo
+        const min = Math.floor(Number(eff.min));
+        const max = Math.floor(Number(eff.max));
+        if (Number.isFinite(min) && Number.isFinite(max) && max >= min) {
+          const span = (max - min + 1);
+          const roll = min + Math.floor(nextRandom() * span);
+          PlayerAPI.addXP(roll);
+          msgs.push(`+${toInt(roll)} XP`);
         }
         break;
       }
@@ -247,39 +286,40 @@ function runEffects(effects, labelForLog) {
         const { mod } = eff;
         if (mod && typeof mod === 'object') {
           addModifier(mod);
-          appendLog({ sev: 'mod', msg: `${String(labelForLog || '')}` });
+          msgs.push('Mod aplicado');
         }
         break;
       }
       case 'removeModById': {
         const { id } = eff;
-        if (typeof id === 'string') { removeModifierById(id); appendLog({ sev:'mod', msg:`${String(labelForLog||'')}` }); }
+        if (typeof id === 'string') { removeModifierById(id); msgs.push('Mod removido'); }
         break;
       }
       case 'removeModsBySource': {
         const { source } = eff;
-        if (typeof source === 'string') { removeModifiersBySource(source); appendLog({ sev:'mod', msg:`${String(labelForLog||'')}` }); }
+        if (typeof source === 'string') { removeModifiersBySource(source); msgs.push('Mod removido'); }
         break;
       }
       case 'removeModsByTag': {
         const { tag } = eff;
-        if (typeof tag === 'string') { removeModifiersByTag(tag); appendLog({ sev:'mod', msg:`${String(labelForLog||'')}` }); }
+        if (typeof tag === 'string') { removeModifiersByTag(tag); msgs.push('Mod removido'); }
         break;
       }
       default: { break; }
     }
   }
+  return msgs;
 }
 /* =====================[ FIM TRECHO 6 ]===================== */
 
 
-/* =====================[ TRECHO 7: Input Lock e Dispatcher de Ações ]===================== */
+/* =====================[ TRECHO 7: Input Lock e Dispatcher de Ações (log minimalista) ]===================== */
 /**
  * [DOC]
  * - `withInputLock` evita múltiplos cliques simultâneos.
  * - `handleAction` executa a ação (0..3), aplica custos/efeitos,
- *   sorteia próxima sala em "explore", loga descrição da nova sala,
- *   atualiza HUD e log curto.
+ *   sorteia próxima sala em "explore", atualiza HUD e log curto.
+ * [CHANGE] Explorar: apenas -10 Energia (sem XP).
  */
 function withInputLock(fn) {
   if (inputLocked) return;
@@ -304,7 +344,7 @@ export function handleAction(idx) {
     const action = room.actions?.[idx];
     if (!action) return;
 
-    const labelResolved = action.labelKey ? t(action.labelKey, '') : getActionLabel(idx);
+    const eventLabel = action.labelKey ? t(action.labelKey, '') : getActionLabel(idx);
     const role = action.role || 'act';
 
     if (role !== 'explore' && isActionUsedToday(STATE.currentRoomId, idx)) {
@@ -314,7 +354,8 @@ export function handleAction(idx) {
       markActionUsedToday(STATE.currentRoomId, idx);
     }
 
-    runEffects(action.effects || [], labelResolved);
+    // 1) Executa efeitos declarados e coleta mensagens
+    const effectMsgs = runEffectsCollectMessages(action.effects || []);
 
     // Sala armadilha: após qualquer 'act', todas as 'act' contam como usadas
     if (isTrapRoom(STATE.currentRoomId) && role !== 'explore') {
@@ -326,14 +367,11 @@ export function handleAction(idx) {
       renderRoom();
     }
 
+    // 2) Papel especial: explorar (aplica custo/ganho padrão e transita de sala)
     if (role === 'explore') {
-      // Custo padrão: -10 energia
+      // [CHANGE] Custo padrão: -10 energia (sem XP)
       PlayerAPI.addStatus('energia', -10);
-
-      // XP variável 5..8
-      const xpGain = 5 + Math.floor(nextRandom() * 4); // 5..8
-      PlayerAPI.addXP(xpGain);
-      appendLog({ sev: 'mod', msg: `+${xpGain} XP` });
+      effectMsgs.push('-10 Energia');
 
       // Avança o dia, reseta uso de ações
       addDay(1);
@@ -344,20 +382,28 @@ export function handleAction(idx) {
       const nextId = ROOM_IDS[Math.floor(nextRandom() * ROOM_IDS.length)] || STATE.currentRoomId;
       STATE.currentRoomId = nextId;
 
-      // Loga descrição ao entrar na nova sala (evita duplicatas)
-      logRoomEntry(nextId);
-
+      // (sem log de descrição)
       renderRoom();
     }
 
-    // Checa Game Over (energia 0) após aplicar efeitos/custos
+    // 3) Checa Game Over (energia 0) após aplicar efeitos/custos
     if (checkGameOverByEnergy()) {
       renderHUD();
+      // **Sempre** loga o evento; efeitos se houver.
+      if (eventLabel) {
+        const tail = effectMsgs.length ? ` ${effectMsgs.join(', ')}` : '';
+        appendLog({ sev: 'mod', msg: `${String(eventLabel)}:${tail}`, ctx: { day: getDay() } });
+      }
       renderLog(getLogLastNTexts(4));
       return;
     }
 
+    // 4) Atualiza HUD e Log (**sempre** loga o evento)
     renderHUD();
+    if (eventLabel) {
+      const tail = effectMsgs.length ? ` ${effectMsgs.join(', ')}` : '';
+      appendLog({ sev: 'mod', msg: `${String(eventLabel)}:${tail}`, ctx: { day: getDay() } });
+    }
     renderLog(getLogLastNTexts(4));
   });
 }
