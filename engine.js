@@ -122,7 +122,90 @@ function checkGameOverByEnergy() {
  * - Aplica título (i18n), descrição (variação para sala_vazia) e background declarativo.
  * - Configura os 4 botões conforme a lógica da sala e do dia.
  * - Sala de Game Over: apenas "Jogar Novamente" no slot 4.
+ *
+ * [CHANGE][WHY] Botões agora exibem custo/benefício no texto:
+ *   Ex.: "Explorar [-10 ⚡]", "Meditar [+20% ⚡ +60% 🧠]", "Treinar [+5–10 ⭐]"
  */
+const STAT_EMOJI = { vida:'❤️', energia:'⚡', mana:'💧', sanidade:'🧠' };
+const ATR_EMOJI  = { ataque:'⚔️', defesa:'🛡️', precisao:'🎯', agilidade:'💨' };
+const XP_EMOJI   = '⭐';
+const EXPLORE_ENERGY_COST = 10; // [WHY] custo padrão do explorar (engine aplica -10 energia)
+
+function _pctToInt(pct) {
+  const n = Number(pct);
+  if (!Number.isFinite(n)) return null;
+  const p = Math.round(n * 100);
+  return Number.isFinite(p) ? p : null;
+}
+
+function _formatEffectsForButton(action, role) {
+  // Explorar: custo padrão sempre visível
+  if (role === 'explore') return `[-${EXPLORE_ENERGY_COST} ${STAT_EMOJI.energia}]`;
+
+  const effs = action && Array.isArray(action.effects) ? action.effects : [];
+  if (!effs.length) return '';
+
+  const parts = [];
+
+  for (let i = 0; i < effs.length; i++) {
+    const eff = effs[i];
+    if (!eff || typeof eff.type !== 'string') continue;
+
+    switch (eff.type) {
+      case 'noop': {
+        break;
+      }
+      case 'statusDeltaPctOfMax': {
+        const key = String(eff.key || '');
+        const p = _pctToInt(eff.pct);
+        const em = STAT_EMOJI[key];
+        if (p !== null && em && p !== 0) parts.push(`+${p}% ${em}`);
+        break;
+      }
+      case 'statusDelta': {
+        const key = String(eff.key || '');
+        const em = STAT_EMOJI[key];
+        const d = Math.trunc(Number(eff.delta) || 0);
+        if (em && d !== 0) parts.push(`${d >= 0 ? '+' : ''}${d} ${em}`);
+        break;
+      }
+      case 'atributoDelta': {
+        const key = String(eff.key || '');
+        const em = ATR_EMOJI[key];
+        const d = Math.trunc(Number(eff.delta) || 0);
+        if (em && d !== 0) parts.push(`${d >= 0 ? '+' : ''}${d} ${em}`);
+        break;
+      }
+      case 'statusMaxDelta': {
+        const key = String(eff.key || '');
+        const em = STAT_EMOJI[key];
+        const d = Math.trunc(Number(eff.delta) || 0);
+        if (em && d !== 0) parts.push(`${d >= 0 ? '+' : ''}${d} Máx ${em}`);
+        break;
+      }
+      case 'xpDeltaRange': {
+        const min = Math.floor(Number(eff.min));
+        const max = Math.floor(Number(eff.max));
+        if (Number.isFinite(min) && Number.isFinite(max) && max >= min) {
+          parts.push(`+${min}–${max} ${XP_EMOJI}`);
+        }
+        break;
+      }
+      case 'xpDelta': {
+        const a = Math.trunc(Number(eff.amount) || 0);
+        if (a !== 0) parts.push(`${a >= 0 ? '+' : ''}${a} ${XP_EMOJI}`);
+        break;
+      }
+      // addMod/removeMod* propositalmente não entram no texto do botão (evita poluição)
+      default: {
+        break;
+      }
+    }
+  }
+
+  return parts.length ? `[${parts.join(' ')}]` : '';
+}
+
 export function renderRoom() {
   const room = ROOMS[STATE.currentRoomId] || ROOMS['sala_vazia'];
   const trap = isTrapRoom(STATE.currentRoomId);
@@ -170,12 +253,15 @@ export function renderRoom() {
   for (let i = 0; i < 4; i++) {
     const a = room.actions?.[i];
     if (a) {
-      const label = a.labelKey ? t(a.labelKey, a.label || '') : (a.label || '');
-      setActionLabel(i, label);
+      const baseLabel = a.labelKey ? t(a.labelKey, a.label || '') : (a.label || '');
+      const role = a.role || 'act';
+      const suffix = _formatEffectsForButton(a, role);
+      const finalLabel = suffix ? `${baseLabel} ${suffix}` : baseLabel;
+
+      setActionLabel(i, finalLabel);
 
       let enabled = true;
       if (trap) {
-        const role = a.role || 'act';
         if (role === 'explore') {
           enabled = anyNonExploreUsed;        // só habilita após usar uma não-explorar
         } else {
@@ -320,11 +406,19 @@ function runEffectsCollectMessages(effects) {
  * - `handleAction` executa a ação (0..3), aplica custos/efeitos,
  *   sorteia próxima sala em "explore", atualiza HUD e log curto.
  * [CHANGE] Explorar: apenas -10 Energia (sem XP).
+ * [CHANGE][WHY] O texto do botão pode conter sufixo de efeitos "[...]";
+ *               o log deve usar o label base quando não houver labelKey.
  */
 function withInputLock(fn) {
   if (inputLocked) return;
   inputLocked = true;
   try { fn(); } finally { requestAnimationFrame(() => { inputLocked = false; }); }
+}
+
+function _stripButtonSuffix(label) {
+  const s = String(label || '');
+  const cut = s.indexOf(' [');
+  return cut > 0 ? s.slice(0, cut) : s;
 }
 
 export function handleAction(idx) {
@@ -344,8 +438,12 @@ export function handleAction(idx) {
     const action = room.actions?.[idx];
     if (!action) return;
 
-    const eventLabel = action.labelKey ? t(action.labelKey, '') : getActionLabel(idx);
     const role = action.role || 'act';
+
+    // [CHANGE] label base para log: preferir i18n; fallback remove sufixo do botão
+    const eventLabel = action.labelKey
+      ? t(action.labelKey, '')
+      : _stripButtonSuffix(getActionLabel(idx));
 
     if (role !== 'explore' && isActionUsedToday(STATE.currentRoomId, idx)) {
       return; // 1x/dia por ação 'act'

@@ -1,36 +1,51 @@
 /* =====================[ TRECHO 1: BASE, TOKENS E RESET GLOBAL ]===================== */
 /* [DOC] Tokens e tipografia fluidos: 1rem cresce com a largura do device.
-   [WHY] Opção 2 (fluido): base 360px ⇒ html{ font-size: 100dvw/36 } ⇒ 1rem = 10px em 360px. */
+   [WHY] A interface ganha identidade visual sem depender de imagens de UI. */
 :root{
-  /* Neutras */
-  --bg: #ffffff;
-  --surface: #ffffff;
-  --border: #dcdcdc;
-  --text: #111111;
-  --runline: #111;
-  --muted: #505050;
+  /* Base visual */
+  --bg: #f7f1e6;
+  --surface: rgba(255, 252, 246, 0.94);
+  --surface-2: rgba(255, 249, 240, 0.9);
+  --surface-3: rgba(248, 240, 228, 0.92);
+  --border: #d8cbb6;
+  --border-strong: #bda685;
+  --text: #201914;
+  --muted: #6b5d52;
+  --runline: #2a201a;
+  --accent: #5d42b8;
+  --accent-2: #8c74ea;
+  --accent-soft: rgba(93, 66, 184, 0.12);
+  --warm: #b9872e;
+  --warm-soft: rgba(185, 135, 46, 0.12);
+  --shadow-soft: 0 0.8rem 2rem rgba(32, 25, 20, 0.08);
+  --shadow-panel: 0 1.2rem 3.2rem rgba(32, 25, 20, 0.14);
+  --shadow-press: 0 0.5rem 1.4rem rgba(32, 25, 20, 0.12);
+  --track: #e8ded0;
 
   /* Barras */
-  --life: #d81515;
-  --mana: #1459ec;
-  --energy: #27ac05;
-  --sanity: #7027ec;
-  --hp: #e5484d;
-  --track: #e5e7eb;
+  --life: #cc3445;
+  --mana: #3766db;
+  --energy: #3c9c35;
+  --sanity: #7f52d6;
+  --hp: #d64d4d;
 
-  --radius: 0.8rem;     /* 8px base */
-  --gap: 0.8rem;        /* 8px base */
-  --btn-h: 4.4rem;      /* 44px base */
+  --radius: 1rem;
+  --radius-lg: 1.4rem;
+  --gap: 0.8rem;
+  --btn-h: 4.4rem;
 }
 
 *{ box-sizing: border-box; }
-html{ font-size: calc(100dvw / 36); } /* [CHANGE] rem escalar por largura do device */
+html{ font-size: calc(100dvw / 36); }
 html, body{ height: 100%; margin: 0; }
 body{
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   color: var(--text);
-  background: #eceff1;     /* área externa ao “aparelho” */
-  overflow: hidden;         /* sem scroll global */
+  background:
+    radial-gradient(circle at top, rgba(141, 116, 234, 0.2), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(185, 135, 46, 0.16), transparent 28%),
+    linear-gradient(180deg, #d8dde7 0%, #cfd6dd 100%);
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -38,66 +53,90 @@ body{
 
 
 /* =====================[ TRECHO 2: STAGE E CONTAINER 360x800 ]===================== */
-/* [DOC] Centraliza o "aparelho" (36rem × 80rem) no viewport e define o container do jogo.
-   [CHANGE]
-   - Adição de tokens de altura por seção no container do app (.game).
-   - Perfis de densidade via [data-density="compact|regular|roomy"] para ajustes rápidos.
-   - As seções usam height com tokens (mantém layout atual), permitindo ajuste fino por densidade. */
+/* [DOC] Moldura principal com profundidade leve e iluminação suave. */
 .stage{
-  width: 100dvw;    /* [CHANGE] usar dvw para refletir largura útil dinâmica */
+  width: 100dvw;
   height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 0;
+  padding: 1rem;
 }
 
 .game{
-  width: 36rem;               /* 360px base */
-  height: 80rem;              /* 800px base */
-  background: var(--bg);
-  border: 0.1rem solid #c9cdd2;
-  border-radius: 1rem;        /* 10px base */
-  padding: 0.8rem;
+  position: relative;
+  isolation: isolate;
+  width: 36rem;
+  height: 80rem;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0)) 0 0 / 100% 18rem no-repeat,
+    linear-gradient(180deg, #fffdf8 0%, #f7f0e5 100%);
+  border: 0.1rem solid rgba(189, 166, 133, 0.75);
+  border-radius: 1.8rem;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;                /* 6px base */
-  overflow: hidden;           /* zero scroll interno */
+  gap: 0.7rem;
+  overflow: hidden;
+  box-shadow:
+    0 2.4rem 5rem rgba(32, 25, 20, 0.18),
+    inset 0 0.1rem 0 rgba(255,255,255,0.78);
 
-  /* [CHANGE][STATE] Tokens de altura por seção (perfil "regular") */
-  --h-toprow:   5rem;    /* 50px */
-  --h-stats:   12.8rem;  /* 128px */
-  --h-sec:      4.8rem;  /* 48px  (secstats) */
-  --h-room:    13.2rem;  /* 132px */
-  --h-run:      3.6rem;  /* 36px  (runline) */
-  --h-act:     20rem;    /* 200px (actions) */
-  --h-log:      8.8rem;  /* 88px  */
-  --h-ads:      5.8rem;  /* 58px  */
+  --h-toprow:   4.8rem;
+  --h-stats:   12.8rem;
+  --h-sec:      4.8rem;
+  --h-room:    15.4rem;
+  --h-run:      3.2rem;
+  --h-act:     22.6rem;
+  --h-log:     10.2rem;
+}
+.game::before,
+.game::after{
+  content: "";
+  position: absolute;
+  inset: auto;
+  pointer-events: none;
+  z-index: 0;
+}
+.game::before{
+  width: 24rem;
+  height: 24rem;
+  top: -8rem;
+  right: -7rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(141, 116, 234, 0.22) 0%, rgba(141, 116, 234, 0) 68%);
+}
+.game::after{
+  width: 18rem;
+  height: 18rem;
+  bottom: -7rem;
+  left: -5rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(185, 135, 46, 0.16) 0%, rgba(185, 135, 46, 0) 70%);
+}
+.game > *{
+  position: relative;
+  z-index: 1;
 }
 
-/* [CHANGE][DOC] Perfis de densidade (override dos tokens acima) */
 .game[data-density="compact"]{
-  --h-toprow:   4.6rem;
+  --h-toprow:   4.4rem;
   --h-stats:   12.0rem;
   --h-sec:      4.4rem;
-  --h-room:    12.4rem;
-  --h-run:      3.2rem;
-  --h-act:     19.2rem;
-  --h-log:      8.0rem;
-  --h-ads:      5.2rem;
+  --h-room:    14.2rem;
+  --h-run:      3.0rem;
+  --h-act:     21.4rem;
+  --h-log:      9.4rem;
 }
 .game[data-density="roomy"]{
-  --h-toprow:   5.4rem;
-  --h-stats:   13.6rem;
-  --h-sec:      5.2rem;
-  --h-room:    14.4rem;
-  --h-run:      4.0rem;
-  --h-act:     20.8rem;
-  --h-log:      9.6rem;
-  --h-ads:      6.4rem;
+  --h-toprow:   4.8rem;
+  --h-stats:   13.2rem;
+  --h-sec:      5.0rem;
+  --h-room:    15.8rem;
+  --h-run:      3.2rem;
+  --h-act:     22.8rem;
+  --h-log:     10.0rem;
 }
 
-/* [CHANGE] Seções agora usam tokens de altura
-   (mantém layout atual; permite ajuste de densidade sem tocar nas regras de cada seção) */
 .toprow    { height: var(--h-toprow); }
 .stats-grid{ height: var(--h-stats); }
 .secstats  { height: var(--h-sec); }
@@ -105,7 +144,6 @@ body{
 .runline   { height: var(--h-run); }
 .actions   { height: var(--h-act); }
 .log       { height: var(--h-log); }
-.ads       { height: var(--h-ads); }
 /* =====================[ FIM TRECHO 2 ]===================== */
 
 
@@ -114,125 +152,172 @@ body{
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  column-gap: 1.5rem;
+  column-gap: 0.9rem;
 }
 
 .toprow .level{
-  font-size: 1.7rem;
-  font-weight: 600;
+  min-width: 8rem;
+  min-height: 4rem;
+  padding: 0 1.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 0.1rem solid rgba(93, 66, 184, 0.18);
+  background: linear-gradient(180deg, rgba(93, 66, 184, 0.1), rgba(93, 66, 184, 0.02));
+  box-shadow: inset 0 0.1rem 0 rgba(255,255,255,0.72);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
   white-space: nowrap;
 }
+.toprow .level strong{ color: var(--accent); }
 
 .toprow .icon-btn{
-  width: 4.4rem; 
+  width: 4.4rem;
   height: 4.4rem;
-  font-size: 2.4rem;
-  border: 0.1rem solid var(--border);
-  background: var(--surface);
-  border-radius: var(--radius);
+  font-size: 2.1rem;
+  border: 0.1rem solid rgba(107, 93, 82, 0.12);
+  background: rgba(255,255,255,0.42);
+  border-radius: 1.2rem;
   color: var(--muted);
+  box-shadow: inset 0 0.1rem 0 rgba(255,255,255,0.72);
 }
+.toprow .icon-btn--placeholder{
+  opacity: 0.56;
+  border-style: dashed;
+}
+.toprow .icon-btn:disabled{ cursor: default; }
 .toprow .icon-btn:focus-visible{
-  outline: 0.2rem solid #999;
+  outline: 0.2rem solid rgba(93, 66, 184, 0.4);
   outline-offset: 0.2rem;
 }
 
-/* Pilha central (valor + barra) */
 .xp-stack{
   display: grid;
-  grid-template-rows: auto 0.8rem; /* valor | barra */
-  row-gap: 0.6rem;
+  grid-template-rows: auto 1rem;
+  row-gap: 0.5rem;
   align-items: center;
+  padding: 0.2rem 0.6rem 0;
 }
 
 .xp-label{
-  font-size: 1.4rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   color: var(--muted);
   text-align: center;
   line-height: 1;
 }
 
-/* Estrutura da barra (estilo compartilhado refinado no TRECHO 4) */
 .xp-bar{
   position: relative;
-  height: 0.8rem;
-  background: var(--track);
-  border-radius: 0.4rem;
+  height: 1rem;
+  background: linear-gradient(180deg, #ede3d7, #dfd1bf);
+  border: 0.1rem solid rgba(107, 93, 82, 0.08);
+  border-radius: 999px;
   overflow: hidden;
+  box-shadow: inset 0 0.2rem 0.4rem rgba(32, 25, 20, 0.08);
 }
 .xp-fill{
   position: absolute;
-  inset: 0 100% 0 0; /* inicia vazia (0%) */
-  background: #27ac05;  /* XP neutra */
+  inset: 0 100% 0 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  border-radius: inherit;
 }
 /* =====================[ FIM TRECHO 3 ]===================== */
 
 /* =====================[ TRECHO 4: BARRAS DE PROGRESSO (COMPARTILHADO) ]===================== */
 .bar{
   position: relative;
-  height: 0.8rem;
-  background: var(--track);
-  border-radius: 0.4rem;
+  height: 0.9rem;
+  background: linear-gradient(180deg, #eee3d6, #e0d2bf);
+  border-radius: 999px;
   overflow: hidden;
+  box-shadow: inset 0 0.15rem 0.35rem rgba(32, 25, 20, 0.1);
 }
-.fill{ position:absolute; inset:0 auto 0 0; }
-.fill.life{   background: var(--life); }
-.fill.mana{   background: var(--mana); }
-.fill.energy{ background: var(--energy); }
-.fill.sanity{ background: var(--sanity); }
-.fill.hp{     background: var(--hp); }
+.fill{
+  position:absolute;
+  inset:0 auto 0 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0.1rem 0 rgba(255,255,255,0.28);
+}
+.fill.life{   background: linear-gradient(90deg, #cb4350, var(--life)); }
+.fill.mana{   background: linear-gradient(90deg, #5a85ee, var(--mana)); }
+.fill.energy{ background: linear-gradient(90deg, #5bb554, var(--energy)); }
+.fill.sanity{ background: linear-gradient(90deg, #9b76ef, var(--sanity)); }
+.fill.hp{     background: linear-gradient(90deg, #ef7474, var(--hp)); }
 /* =====================[ FIM TRECHO 4 ]===================== */
 
 /* =====================[ TRECHO 5: STATS 2×2 (VIDA, MANA, ENERGIA, SANIDADE) ]===================== */
-/* [DOC]
-   - Grid 2×2 para os stats principais.
-   - [CHANGE] Ícones (emojis) passam a ser definidos por seletor semântico
-     .stat-card[data-stat="..."] em vez de :nth-child; isso reduz acoplamento à ordem dos elementos. */
 .stats-grid{
   display:grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 6rem 6rem;  /* 60 + 60 + gap 0.8 = 12.8rem */
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
 }
 
 .stat-card{
-  border: 0.1rem solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.8rem;
-  background:#fff;
-  display:flex; 
-  flex-direction:column; 
-  justify-content: center;
+  border: 0.1rem solid rgba(189, 166, 133, 0.42);
+  border-radius: 1.2rem;
+  padding: 0.9rem;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.84), rgba(255,255,255,0.48)),
+    var(--surface);
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  box-shadow: var(--shadow-soft);
   user-select: none;
 }
 .stat-head{
-  display:flex; 
-  align-items:center; 
-  justify-content: space-between; 
-  padding: 0 0.4rem;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 0.8rem;
 }
 .stat-name{
-  font-size: 1.5rem;
-  font-weight: 700;
-  color:#111; 
-  line-height: 1;
+  font-size: 1.28rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  line-height: 1.05;
 }
 .stat-val{
-  font-size: 1.2rem;
-  font-weight: 600;
-  color:#333; 
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.58);
+  border: 0.1rem solid rgba(107, 93, 82, 0.08);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--muted);
 }
 
-.stat-card .bar{ margin-top: 0.6rem; }
+.stat-card .bar{ margin-top: 0.65rem; }
 
-/* Espaço lateral do “ícone” (antes do texto) */
 .stats-grid .stat-name::before{
   display: inline-block;
-  margin-right: 0.35rem;  /* espaço depois do ícone */
+  margin-right: 0.35rem;
   line-height: 1;
 }
 
-/* [CHANGE] Ícones por seletor semântico (sem dependência de ordem) */
+.stats-grid .stat-card[data-stat="vida"]{
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.48)), linear-gradient(135deg, rgba(204, 52, 69, 0.08), rgba(255,255,255,0));
+  border-color: rgba(204, 52, 69, 0.2);
+}
+.stats-grid .stat-card[data-stat="mana"]{
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.48)), linear-gradient(135deg, rgba(55, 102, 219, 0.08), rgba(255,255,255,0));
+  border-color: rgba(55, 102, 219, 0.2);
+}
+.stats-grid .stat-card[data-stat="energia"]{
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.48)), linear-gradient(135deg, rgba(60, 156, 53, 0.08), rgba(255,255,255,0));
+  border-color: rgba(60, 156, 53, 0.2);
+}
+.stats-grid .stat-card[data-stat="sanidade"]{
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.48)), linear-gradient(135deg, rgba(127, 82, 214, 0.08), rgba(255,255,255,0));
+  border-color: rgba(127, 82, 214, 0.2);
+}
+
 .stats-grid .stat-card[data-stat="vida"]    .stat-name::before{ content: "❤️"; }
 .stats-grid .stat-card[data-stat="mana"]    .stat-name::before{ content: "💧"; }
 .stats-grid .stat-card[data-stat="energia"] .stat-name::before{ content: "⚡"; }
@@ -240,31 +325,31 @@ body{
 /* =====================[ FIM TRECHO 5 ]===================== */
 
 /* =====================[ TRECHO 6: STATUS DO JOGADOR (4 ÍCONES EM EMOJI) ]===================== */
-.secstats{ 
-  display:flex; 
-  align-items:center; 
-  height: 4.8rem;
+.secstats{
+  display:flex;
+  align-items:center;
 }
 
 .secstats-grid{
-  display:grid; 
+  display:grid;
   width:100%;
+  height: 100%;
   grid-template-columns: repeat(4, 1fr);
   gap: 0.6rem;
 }
 
 .stat-chip{
-  position: relative;               
+  position: relative;
   height: 100%;
-  min-height: 4.4rem;                 /* alvo de toque acessível */
-  border: 0.1rem solid var(--border);
-  background:#fff;
-  border-radius: var(--radius);
-  font-size: 2rem;
-  font-weight: 600;
-  color:#222;
-  padding: 1rem 0.6rem;
-  padding-left: 3.4rem;               /* espaço para o emoji à esquerda */
+  min-height: 4.4rem;
+  border: 0.1rem solid rgba(107, 93, 82, 0.12);
+  background: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(249, 242, 232, 0.86));
+  border-radius: 1.1rem;
+  box-shadow: var(--shadow-soft), inset 0 0.1rem 0 rgba(255,255,255,0.76);
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--text);
+  padding: 0.9rem 0.8rem 0.9rem 3.25rem;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -272,88 +357,122 @@ body{
   user-select: none;
 }
 
-/* Foco visível */
+.stat-chip:disabled{
+  opacity: 1;
+  color: var(--text);
+}
 .stat-chip:focus-visible{
-  outline: 0.2rem solid #111;
+  outline: 0.2rem solid rgba(93, 66, 184, 0.35);
   outline-offset: 0.2rem;
 }
 
-/* Base do “ícone” (emoji) à esquerda */
 .stat-chip::before{
-  content: "";                      /* será definido por modificador */
+  content: "";
   position: absolute;
-  left: 1rem;
+  left: 0.95rem;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 1.8rem;                /* tamanho do emoji */
+  font-size: 1.75rem;
   line-height: 1;
 }
 
-/* Ícones por atributo (emojis) */
-.stat-chip--atk::before{ content: "⚔️"; }  /* Ataque */
-.stat-chip--def::before{ content: "🛡️"; }  /* Defesa */
-.stat-chip--acc::before{ content: "🎯"; }  /* Precisão */
-.stat-chip--agi::before{ content: "💨"; }  /* Agilidade */
+.stat-chip--atk{ background-image: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(248, 236, 230, 0.88)); }
+.stat-chip--def{ background-image: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(237, 243, 252, 0.9)); }
+.stat-chip--acc{ background-image: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(252, 244, 228, 0.9)); }
+.stat-chip--agi{ background-image: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(234, 247, 236, 0.9)); }
+
+.stat-chip--atk::before{ content: "⚔️"; }
+.stat-chip--def::before{ content: "🛡️"; }
+.stat-chip--acc::before{ content: "🎯"; }
+.stat-chip--agi::before{ content: "💨"; }
 /* =====================[ FIM TRECHO 6 ]===================== */
 
 
 /* =====================[ TRECHO 7: PAINEL DE SALA / INIMIGO ]===================== */
 .room{
-  /* [CHANGE][DOC] Fundo com imagem declarada via CSS var --room-bg + overlay para legibilidade */
-  --room-bg: none; /* definido em runtime pelo ui.js */
-  border: 0.1rem solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.8rem;
-  background-color:#fff;
-  /* duas camadas: overlay (topo) + imagem (fundo) */
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.88), rgba(255,255,255,0.88)), var(--room-bg);
-  background-size: auto, cover;
+  --room-bg: none;
+  position: relative;
+  overflow: hidden;
+  border: 0.1rem solid rgba(189, 166, 133, 0.55);
+  border-radius: 1.5rem;
+  padding: 1.35rem 1.4rem;
+  background-color: #fff;
+  background-image:
+    linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248, 240, 228, 0.9)),
+    radial-gradient(circle at top, rgba(93, 66, 184, 0.12), transparent 38%),
+    var(--room-bg);
+  background-size: auto, auto, cover;
   background-position: center;
-  background-repeat: no-repeat, no-repeat;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  box-shadow: var(--shadow-panel);
 
   display:flex;
   flex-direction:column;
   justify-content:space-between;
 }
-
-/* Título da sala (INFO) */
-.room-title{
-  margin: 0;
-  text-align:center;
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: #222;
+.room::after{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0));
+  pointer-events: none;
+}
+.room.room--info{
+  justify-content: center;
+  gap: 1.2rem;
 }
 
-/* [CHANGE] Descrição padronizada da sala (texto simples) */
+.room-title{
+  position: relative;
+  margin: 0;
+  padding-bottom: 0.9rem;
+  text-align:center;
+  font-size: 2.15rem;
+  font-weight: 900;
+  letter-spacing: 0.015em;
+  color: var(--text);
+}
+.room-title::after{
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 8rem;
+  height: 0.25rem;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(185, 135, 46, 0), rgba(185, 135, 46, 0.9), rgba(93, 66, 184, 0.95), rgba(93, 66, 184, 0));
+}
+
 .room-desc{
-  margin: 0.6rem 0 0;           /* pequeno espaço abaixo do título */
+  margin: 0;
   padding: 0 0.8rem;
   text-align: center;
-  font-size: 2rem;
-  line-height: 1.25;
-  color: #333;
+  font-size: 1.68rem;
+  line-height: 1.42;
+  color: var(--muted);
   user-select: none;
 }
 
-/* Cartão do inimigo (COMBAT) */
 .enemy-card{
   display: grid;
   grid-template-rows: auto auto auto;
   row-gap: 0.8rem;
+  padding: 1rem;
+  border-radius: 1.2rem;
+  background: rgba(255,255,255,0.62);
+  border: 0.1rem solid rgba(107, 93, 82, 0.08);
 }
 
-/* Toggle de visibilidade entre os modos */
-.room.room--info   .enemy-card { display:none; }
+.room.room--info .enemy-card { display:none; }
 
-/* Nome do inimigo */
 .enemy-name{
   margin: 0;
   font-size: 1.6rem;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text);
 }
 
-/* Barra de HP do inimigo (reusa .bar/.fill.hp) */
 .enemy-hp{ height: 1rem; }
 /* =====================[ FIM TRECHO 7 ]===================== */
 
@@ -362,144 +481,159 @@ body{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 5rem;
-  border: 0.1rem solid var(--border);
-  background: var(--surface);
-  border-radius: 0.6rem;
-  font-size: 1.6rem;
+  padding: 0 1.2rem;
+  border: 0.1rem solid rgba(189, 166, 133, 0.28);
+  background: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(246, 237, 225, 0.92));
+  border-radius: 999px;
+  box-shadow: var(--shadow-soft);
+  font-size: 1.28rem;
   line-height: 1;
   white-space: nowrap;
   color: var(--runline);
+  letter-spacing: 0.04em;
 }
-.runline .runline-day{ font-weight: 600; }
-.runline .runline-floor{ font-weight: 600; text-align: right; }
+.runline .runline-day,
+.runline .runline-floor{
+  font-weight: 800;
+}
+.runline .runline-day{ color: var(--accent); }
+.runline .runline-floor{ text-align: right; color: var(--warm); }
 /* =====================[ FIM TRECHO 7.1 ]===================== */
 
 
 /* =====================[ TRECHO 8: AÇÕES PRINCIPAIS ]===================== */
-.actions{ 
-  display:flex; 
-  flex-direction:column; 
-  gap: 0.8rem; 
+.actions{
+  display:flex;
+  flex-direction:column;
+  gap: 0.85rem;
 }
+
+.actions .btn{
+  flex: 1 1 0;
+  min-height: var(--btn-h);
+}
+
 .btn{
-  height: var(--btn-h);
-  border-radius: var(--radius);
-  border: 0.1rem solid var(--border);
-  background:#f2f2f2; 
-  color:#111;
-  font-size: 1.6rem;
-  font-weight:600;
+  height: auto;
+  border-radius: 1.35rem;
+  border: 0.1rem solid rgba(189, 166, 133, 0.42);
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(247, 239, 227, 0.96));
+  color: var(--text);
+  font-size: 1.54rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 1rem 1.2rem;
+  line-height: 1.2;
+  box-shadow: var(--shadow-soft), inset 0 0.1rem 0 rgba(255,255,255,0.84);
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
 }
-.btn-primary{ background:#e9e9e9; }
+.btn:active:not(:disabled){
+  transform: translateY(0.08rem);
+  box-shadow: var(--shadow-press), inset 0 0.1rem 0 rgba(255,255,255,0.5);
+}
+.btn:disabled{
+  background: linear-gradient(180deg, rgba(243, 236, 226, 0.96), rgba(237, 228, 214, 0.96));
+  border-color: rgba(107, 93, 82, 0.12);
+  color: #9b8d82;
+  box-shadow: none;
+}
+
+.btn-primary{
+  border-color: rgba(61, 43, 121, 0.48);
+  background: linear-gradient(180deg, #6a4fd1, #5138a8);
+  color: #fffefb;
+  box-shadow: 0 1.1rem 2.4rem rgba(81, 56, 168, 0.32), inset 0 0.1rem 0 rgba(255,255,255,0.22);
+}
+.btn-primary:disabled{
+  background: linear-gradient(180deg, #b8aed8, #a89ccf);
+  border-color: rgba(61, 43, 121, 0.16);
+  color: rgba(255,255,255,0.82);
+}
 /* =====================[ FIM TRECHO 8 ]===================== */
 
 /* =====================[ TRECHO 9: LOG (4 LINHAS, ADAPTATIVO 4↔3, SEM SCROLL) ]===================== */
-/* [DOC]
-   - Agora o container usa FLEX COLUNA para permitir linhas de altura variável.
-   - O JS tenta renderizar 4 itens; se houver overflow, re-renderiza com 3.
-   - Sem scroll; a "sobra" vertical é distribuída entre os itens via space-between.
-   - Linhas podem quebrar em múltiplas linhas (sem ellipsis).
-*/
 .log{
-  border: 0.1rem solid var(--border);
-  border-radius: var(--radius);
-  background:#fff;
-  padding: 0.8rem;                 /* altura útil = --h-log - 1.6rem */
+  border: 0.1rem solid rgba(189, 166, 133, 0.36);
+  border-radius: 1.35rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.84), rgba(247, 239, 227, 0.96));
+  padding: 1rem;
   display:flex;
-  align-items:stretch;             /* ocupa a altura total internamente */
-  /* Paleta local de severidade (sem alterar :root) */
-  --sev-info: #2563eb; /* azul */
-  --sev-mod:  #d97706; /* âmbar */
-  --sev-crit: #b91c1c; /* vermelho escuro */
+  align-items:stretch;
+  box-shadow: var(--shadow-soft);
+  --sev-info: #3c69d6;
+  --sev-mod:  #c27b12;
+  --sev-crit: #ba3341;
 }
 
-/* [CHANGE][WHY] Flex coluna + distribuição da sobra.
-   O JS controla 3 ou 4 itens exibidos e coloca data-lines="3|4" quando útil. */
 .log-view{
   width:100%;
   height:100%;
   display:flex;
   flex-direction: column;
-  justify-content: space-between;  /* reparte espaço vertical restante */
-  gap: 0;                          /* a separação vem das bordas das linhas */
-  font-size: 1.5rem;
-  line-height: 1.15;               /* ligeiramente maior para legibilidade em múltiplas linhas */
+  justify-content: space-between;
+  gap: 0;
+  font-size: 1.4rem;
+  line-height: 1.25;
+  color: var(--text);
 }
 
-/* [CHANGE] Linhas podem ocupar múltiplas linhas de texto; sem ellipsis. */
 .log-line{
   position: relative;
   display: block;
-  min-height: 1.8rem;              /* base mínima de altura para linhas curtas */
-  padding: 0.2rem 0.6rem 0.2rem 1rem;
-  white-space: normal;             /* permite quebra de linha */
+  min-height: 1.9rem;
+  padding: 0.32rem 0.75rem 0.32rem 1rem;
+  white-space: normal;
   overflow: visible;
   text-overflow: clip;
-  word-break: break-word;          /* evita “estouro” com palavras longas */
-  border-bottom: 0.1rem solid #eee;
-  border-left: 0.3rem solid transparent; /* barra de severidade */
+  word-break: break-word;
+  border-bottom: 0.1rem solid rgba(107, 93, 82, 0.08);
+  border-left: 0.3rem solid transparent;
+  border-radius: 0.6rem;
 }
 .log-line:last-child{ border-bottom:0; }
-
-/* Zebra sutil (não exagerar para não virar ruído) */
-.log-line:nth-child(even){ background:#fafafa; }
-
-/* Cores por severidade (se algum dia o curto usar data-sev) */
+.log-line:nth-child(even){ background: rgba(255,255,255,0.42); }
 .log-line[data-sev="info"]{ border-left-color: var(--sev-info); }
 .log-line[data-sev="mod"] { border-left-color: var(--sev-mod);  }
 .log-line[data-sev="crit"]{ border-left-color: var(--sev-crit); }
 /* =====================[ FIM TRECHO 9 ]===================== */
 
-/* =====================[ TRECHO 10: ÁREA ADS / PROMO INTERNA ]===================== */
-.ads{
-  display:flex; 
-  align-items:center; 
-  justify-content:center;
-  border: 0.1rem dashed var(--border);
-  border-radius: var(--radius);
-  background:#fafafa; 
-  color:#777;
-  font-weight:600;
-}
-/* =====================[ FIM TRECHO 10 ]===================== */
-
 /* =====================[ TRECHO 11: OVERLAY DE LANDSCAPE (BLOQUEIO) ]===================== */
 .rotate-overlay{
-  position: fixed; 
-  inset: 0; 
+  position: fixed;
+  inset: 0;
   display: none;
-  align-items: center; 
+  align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.65); 
-  color:#fff; 
+  background: rgba(13, 10, 22, 0.74);
+  color:#fff;
   z-index: 9999;
 }
 .rotate-card{
-  background:#151515; 
-  border: 0.1rem solid #3a3a3a;
-  border-radius: 1.2rem; 
-  padding: 2rem; 
+  background: linear-gradient(180deg, #221936, #16101f);
+  border: 0.1rem solid rgba(255,255,255,0.14);
+  border-radius: 1.6rem;
+  padding: 2rem;
   width: min(90vw, 36rem);
   text-align: center;
+  box-shadow: 0 1.6rem 4rem rgba(0,0,0,0.35);
 }
 .rotate-emoji{ font-size: 2.8rem; margin-bottom: 0.8rem; }
 @media (orientation: landscape){
   .rotate-overlay{ display:flex; }
-  body{ overflow:hidden; }  /* reforço de bloqueio */
+  body{ overflow:hidden; }
 }
 /* =====================[ FIM TRECHO 11 ]===================== */
 
 
 /* =====================[ TRECHO 12: ACESSIBILIDADE (FOCO VISÍVEL) ]===================== */
 button:focus-visible{
-  outline: 0.2rem solid #888;
+  outline: 0.2rem solid rgba(93, 66, 184, 0.45);
   outline-offset: 0.2rem;
 }
 /* =====================[ FIM TRECHO 12 ]===================== */
 
 /* =====================[ TRECHO 13: MODAL DE LOG (overlay + dialog 60vh) ]===================== */
-.log { cursor: pointer; } /* Área do log abre o histórico */
+.log { cursor: pointer; }
 body.no-scroll {
   overflow: hidden;
   height: 100vh;
@@ -510,76 +644,73 @@ body.no-scroll {
   position: fixed;
   inset: 0;
   display: flex;
-  flex-direction: column;          /* botão abaixo do painel */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1.2rem;
   padding: 1.2rem;
-  background: rgba(0,0,0,0.5);
+  background: rgba(16, 10, 24, 0.58);
   z-index: 1000;
 }
 .modal-dialog {
-  background: var(--surface);
+  background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(247, 239, 227, 0.98));
   color: var(--text);
-  /* largura será definida em runtime para casar com a .log */
   width: auto;
   max-width: 92vw;
-  height: 60vh;                    /* 60vh mantém mais conteúdo visível */
+  height: 60vh;
   max-height: 60vh;
-  border-radius: var(--radius);
-  box-shadow: 0 0.8rem 2.4rem rgba(0,0,0,0.35);
+  border-radius: 1.5rem;
+  border: 0.1rem solid rgba(189, 166, 133, 0.38);
+  box-shadow: 0 1.4rem 3.2rem rgba(0,0,0,0.24);
   display: flex;
   flex-direction: column;
   outline: 0;
-  overflow: hidden;                /* corpo rola internamente */
+  overflow: hidden;
 }
 .modal-body {
-  padding: 0.8rem 1rem;            /* leve redução geral */
+  padding: 1rem 1.1rem;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   flex: 1 1 auto;
-  font-size: 1.5rem;               /* mantém legibilidade */
-  /* Paleta local de severidade */
-  --sev-info: #2563eb;
-  --sev-mod:  #d97706;
-  --sev-crit: #b91c1c;
+  font-size: 1.45rem;
+  --sev-info: #3c69d6;
+  --sev-mod:  #c27b12;
+  --sev-crit: #ba3341;
 }
-/* Linhas do histórico (visual equivalente ao log curto, porém mais compacto) */
 .modal-body .modal-log-line{
   position: relative;
-  padding: 0.25rem 0.8rem 0.25rem 1rem;  /* ↓ padding vertical */
-  border-bottom: 0.1rem solid #f1f1f1;   /* separador sutil */
-  line-height: 1.30;                     /* ↓ altura de linha */
-  font-size: 1.45rem;                     /* leve ajuste para compensar densidade */
-  border-left: 0.3rem solid transparent;  /* barra de severidade */
+  padding: 0.35rem 0.85rem 0.35rem 1rem;
+  border-bottom: 0.1rem solid rgba(107, 93, 82, 0.08);
+  line-height: 1.3;
+  font-size: 1.4rem;
+  border-left: 0.3rem solid transparent;
+  border-radius: 0.7rem;
 }
-/* Zebra bem sutil para não “abrir” espaço visual */
-.modal-body .modal-log-line:nth-child(even){ background:#fdfdfd; }
+.modal-body .modal-log-line:nth-child(even){ background: rgba(255,255,255,0.38); }
 .modal-body .modal-log-line:last-child { border-bottom: 0; }
-
-/* Cores por severidade */
 .modal-body .modal-log-line[data-sev="info"]{ border-left-color: var(--sev-info); }
 .modal-body .modal-log-line[data-sev="mod"] { border-left-color: var(--sev-mod);  }
 .modal-body .modal-log-line[data-sev="crit"]{ border-left-color: var(--sev-crit); }
 
-/* Botão redondo “X” abaixo do painel */
 .modal-close.modal-close-round {
-  width: 5.6rem;                   /* ≥ 44px */
+  width: 5.6rem;
   height: 5.6rem;
   min-width: 5.6rem;
   min-height: 5.6rem;
   border-radius: 50%;
-  border: 0.1rem solid var(--border);
-  background: #f6f6f6;
-  font-weight: 700;
+  border: 0.1rem solid rgba(189, 166, 133, 0.4);
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(246, 237, 225, 0.96));
+  color: var(--text);
+  font-weight: 800;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-shadow: var(--shadow-soft);
 }
 .modal-close.modal-close-round:focus {
-  outline: 0.2rem solid #000;
+  outline: 0.2rem solid rgba(93, 66, 184, 0.45);
   outline-offset: 0.1rem;
 }
 /* =====================[ FIM TRECHO 13 ]===================== */

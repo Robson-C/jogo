@@ -7,7 +7,7 @@
   <title>Torre da Redenção</title>
   <link rel="stylesheet" href="styles.css" />
   <!-- [DOC] PWA Manifest + cor de tema para barra do SO -->
-  <meta name="theme-color" content="#0f0f0f" />
+  <meta name="theme-color" content="#21192f" />
   <link rel="manifest" href="manifest.json" />
 </head>
 <!-- =====================[ FIM TRECHO 1 ]===================== -->
@@ -25,7 +25,7 @@
 
   <!-- =====================[ TRECHO 3: STAGE & CONTAINER 360x800 ]===================== -->
   <main class="stage">
-    <section class="game" aria-label="Protótipo de interface">
+    <section class="game" data-density="roomy" aria-label="Protótipo de interface">
   <!-- =====================[ FIM TRECHO 3 ]===================== -->
    
       <!-- =====================[ TRECHO 4: HEADER + XP (3 COLUNAS) ]===================== -->
@@ -39,7 +39,7 @@
           </div>
         </div>
 
-        <button class="icon-btn" type="button" data-i18n-aria="ui.menu" data-i18n-title="ui.menu" aria-label="Menu" title="Menu" disabled>☰</button>
+        <button class="icon-btn icon-btn--placeholder" type="button" data-i18n-aria="ui.menu" data-i18n-title="ui.menu" aria-label="Menu" title="Menu" aria-disabled="true" disabled>☰</button>
       </header>
       <!-- =====================[ FIM TRECHO 4 ]===================== -->
 
@@ -165,9 +165,6 @@
       </div>
       <!-- =====================[ FIM TRECHO 9B ]===================== -->
 
-      <!-- =====================[ TRECHO 10: ADS / PROMO INTERNA ]===================== -->
-      <section class="ads" aria-label="Espaço promocional">ADS</section>
-      <!-- =====================[ FIM TRECHO 10 ]===================== -->
 
       <!-- =====================[ TRECHO 11: index.html - scripts em módulos ]===================== -->
       <script type="module" src="./main.js"></script>
