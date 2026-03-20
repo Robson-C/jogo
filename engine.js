@@ -19,15 +19,18 @@ import {
   addDay, getDay, setDay, initPlayerDefaults, clearAllModifiers,
   getEffectiveStatus, getEffectiveStatusMax // [CHANGE] novo import para pct do máximo
 } from './state.js';
-import { setRoomTitle, setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, renderHUD, setRoomDesc, setRoomBackground } from './ui.js';
+import { setRoomTitle, setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, renderHUD, setRoomDesc, setRoomBackground, renderEnemyCard, clearEnemyCard } from './ui.js';
 import { ROOMS, ROOM_IDS } from './rooms.js';
 import { t } from './i18n.js';
+import { pickEnemyForFloor } from './enemies.js';
 
 /* [STATE] Lock para anti multi-input (desbloqueado no próximo rAF) */
 let inputLocked = false;
 
 /* ID canônico de sala especial */
 const GAME_OVER_ROOM_ID = 'fim_de_jogo';
+const COMBAT_ROOM_ID = 'sala_combate';
+const COMBAT_ENEMY_FLOOR = 1;
 /* =====================[ FIM TRECHO 1 ]===================== */
 
 
@@ -82,6 +85,7 @@ function pickRoomDescVariant(roomId) {
 /* =====================[ TRECHO 4: Utilitários de Sala (flags, transições) ]===================== */
 /** [DOC] Predicados de tipo de sala */
 function isTrapRoom(roomId)    { return String(roomId) === 'sala_armadilha'; }
+function isCombatRoom(roomId)  { return String(roomId) === COMBAT_ROOM_ID; }
 function isGameOverRoom(roomId){ return String(roomId) === GAME_OVER_ROOM_ID; }
 
 /**
@@ -92,12 +96,31 @@ function logRoomEntry(/* roomId */) {
   /* intencionalmente vazio (política minimalista de log) */
 }
 
+function clearCombatEnemy() {
+  STATE.currentCombatEnemy = null;
+}
+
+function ensureCombatEnemy() {
+  if (!isCombatRoom(STATE.currentRoomId)) {
+    clearCombatEnemy();
+    return null;
+  }
+  if (STATE.currentCombatEnemy && typeof STATE.currentCombatEnemy === 'object') {
+    return STATE.currentCombatEnemy;
+  }
+  const enemy = pickEnemyForFloor(COMBAT_ENEMY_FLOOR, nextRandom);
+  STATE.currentCombatEnemy = enemy || null;
+  return STATE.currentCombatEnemy;
+}
+
 /** [DOC] Reinicia a run (mantém seed/RNG); limpa mods; reseta jogador e Dia; volta à sala inicial. */
 function restartRun() {
   clearAllModifiers();
   initPlayerDefaults();
   setDay(1);
   resetActionUsageForToday();
+  STATE.nextRoomEmptyChanceRealBoost = false;
+  clearCombatEnemy();
   STATE.currentRoomId = 'sala_vazia';
   renderRoom();
   renderHUD();
@@ -107,6 +130,7 @@ function restartRun() {
 function checkGameOverByEnergy() {
   const energyEff = getEffectiveStatus('energia');
   if (energyEff <= 0 && !isGameOverRoom(STATE.currentRoomId)) {
+    clearCombatEnemy();
     STATE.currentRoomId = GAME_OVER_ROOM_ID;
     renderRoom();
     return true;
@@ -130,6 +154,9 @@ const STAT_EMOJI = { vida:'❤️', energia:'⚡', mana:'💧', sanidade:'🧠' 
 const ATR_EMOJI  = { ataque:'⚔️', defesa:'🛡️', precisao:'🎯', agilidade:'💨' };
 const XP_EMOJI   = '⭐';
 const EXPLORE_ENERGY_COST = 10; // [WHY] custo padrão do explorar (engine aplica -10 energia)
+const FLEE_ENERGY_COST = 5;
+const FLEE_SANITY_COST = 5;
+const FLEE_SUCCESS_CHANCE = 0.5;
 
 function _pctToInt(pct) {
   const n = Number(pct);
@@ -141,6 +168,7 @@ function _pctToInt(pct) {
 function _formatEffectsForButton(action, role) {
   // Explorar: custo padrão sempre visível
   if (role === 'explore') return `[-${EXPLORE_ENERGY_COST} ${STAT_EMOJI.energia}]`;
+  if (role === 'flee') return `[-${FLEE_ENERGY_COST} ${STAT_EMOJI.energia} -${FLEE_SANITY_COST} ${STAT_EMOJI.sanidade}]`;
 
   const effs = action && Array.isArray(action.effects) ? action.effects : [];
   if (!effs.length) return '';
@@ -206,10 +234,39 @@ function _formatEffectsForButton(action, role) {
   return parts.length ? `[${parts.join(' ')}]` : '';
 }
 
+function pickNextRoomId() {
+  const ids = Array.isArray(ROOM_IDS) ? ROOM_IDS.slice() : [];
+  if (!ids.length) return STATE.currentRoomId;
+
+  const boosted = !!STATE.nextRoomEmptyChanceRealBoost;
+  STATE.nextRoomEmptyChanceRealBoost = false;
+
+  if (!boosted) {
+    return ids[Math.floor(nextRandom() * ids.length)] || STATE.currentRoomId;
+  }
+
+  const emptyId = 'sala_vazia';
+  const others = ids.filter(id => id !== emptyId);
+  if (!ids.includes(emptyId) || others.length === 0) {
+    return ids[Math.floor(nextRandom() * ids.length)] || STATE.currentRoomId;
+  }
+
+  if (nextRandom() < 0.5) return emptyId;
+  return others[Math.floor(nextRandom() * others.length)] || emptyId;
+}
+
 export function renderRoom() {
   const room = ROOMS[STATE.currentRoomId] || ROOMS['sala_vazia'];
   const trap = isTrapRoom(STATE.currentRoomId);
+  const combat = isCombatRoom(STATE.currentRoomId);
   const isGO = isGameOverRoom(STATE.currentRoomId);
+  const combatEnemy = combat ? ensureCombatEnemy() : null;
+
+  if (combat) renderEnemyCard(combatEnemy);
+  else {
+    clearCombatEnemy();
+    clearEnemyCard();
+  }
 
   // Título
   if (isGO) {
@@ -234,6 +291,17 @@ export function renderRoom() {
   if (isGO) {
     for (let i = 0; i < 3; i++) { setActionLabel(i, ''); enableAction(i, false); }
     setActionLabel(3, t('action.jogar_novamente', 'Jogar Novamente'));
+    enableAction(3, true);
+    return;
+  }
+
+  // Sala de combate: apenas fuga no slot 4
+  if (combat) {
+    for (let i = 0; i < 3; i++) { setActionLabel(i, ''); enableAction(i, false); }
+    const fleeAction = room.actions?.[3];
+    const baseLabel = fleeAction?.labelKey ? t(fleeAction.labelKey, fleeAction.label || '') : (fleeAction?.label || '');
+    const suffix = _formatEffectsForButton(fleeAction, 'flee');
+    setActionLabel(3, suffix ? `${baseLabel} ${suffix}` : baseLabel);
     enableAction(3, true);
     return;
   }
@@ -445,22 +513,45 @@ export function handleAction(idx) {
       ? t(action.labelKey, '')
       : _stripButtonSuffix(getActionLabel(idx));
 
-    if (role !== 'explore' && isActionUsedToday(STATE.currentRoomId, idx)) {
+    if (role === 'act' && isActionUsedToday(STATE.currentRoomId, idx)) {
       return; // 1x/dia por ação 'act'
     }
-    if (role !== 'explore') {
+    if (role === 'act') {
       markActionUsedToday(STATE.currentRoomId, idx);
     }
 
     // 1) Executa efeitos declarados e coleta mensagens
-    const effectMsgs = runEffectsCollectMessages(action.effects || []);
+    const effectMsgs = [];
+
+    if (role === 'flee') {
+      PlayerAPI.addStatus('energia', -FLEE_ENERGY_COST);
+      PlayerAPI.addStatus('sanidade', -FLEE_SANITY_COST);
+      effectMsgs.push(`-${FLEE_ENERGY_COST} Energia`, `-${FLEE_SANITY_COST} Sanidade`);
+
+      const success = nextRandom() < FLEE_SUCCESS_CHANCE;
+      if (success) {
+        STATE.nextRoomEmptyChanceRealBoost = true;
+        addDay(1);
+        setRunlineDay(getDay());
+        resetActionUsageForToday();
+        clearCombatEnemy();
+        STATE.currentRoomId = pickNextRoomId();
+        effectMsgs.push(t('combat.flee_success', 'Fuga bem-sucedida'));
+        renderRoom();
+      } else {
+        effectMsgs.push(t('combat.flee_fail', 'Fuga falhou'));
+        renderRoom();
+      }
+    } else {
+      effectMsgs.push(...runEffectsCollectMessages(action.effects || []));
+    }
 
     // Sala armadilha: após qualquer 'act', todas as 'act' contam como usadas
-    if (isTrapRoom(STATE.currentRoomId) && role !== 'explore') {
+    if (isTrapRoom(STATE.currentRoomId) && role === 'act') {
       for (let j = 0; j < 4; j++) {
         const aj = room.actions?.[j];
         const rj = aj ? (aj.role || 'act') : 'act';
-        if (aj && rj !== 'explore') markActionUsedToday(STATE.currentRoomId, j);
+        if (aj && rj === 'act') markActionUsedToday(STATE.currentRoomId, j);
       }
       renderRoom();
     }
@@ -476,9 +567,9 @@ export function handleAction(idx) {
       setRunlineDay(getDay());
       resetActionUsageForToday();
 
-      // Sorteio da próxima sala (uniforme)
-      const nextId = ROOM_IDS[Math.floor(nextRandom() * ROOM_IDS.length)] || STATE.currentRoomId;
-      STATE.currentRoomId = nextId;
+      // Sorteio da próxima sala
+      clearCombatEnemy();
+      STATE.currentRoomId = pickNextRoomId();
 
       // (sem log de descrição)
       renderRoom();

@@ -465,7 +465,7 @@ body{
   border: 0.1rem solid rgba(107, 93, 82, 0.08);
 }
 
-.room.room--info .enemy-card { display:none; }
+.enemy-card[hidden] { display: none; }
 
 .enemy-name{
   margin: 0;

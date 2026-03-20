@@ -25,12 +25,14 @@ export const LOCALES = {
     'room.sala_vazia.title': 'Sala Vazia',
     'room.sala_fonte.title': 'Sala com Fonte',
     'room.sala_armadilha.title': 'Sala com Armadilha',
+    'room.sala_combate.title': 'Sala de Combate',
     'room.fim_de_jogo.title': 'Fim de Jogo',
 
     // --- Descrições de salas (fallback padrão) ---
     'room.sala_vazia.desc': 'Uma sala silenciosa e vazia.',
     'room.sala_fonte.desc': 'Uma fonte de água límpida murmura ao centro.',
     'room.sala_armadilha.desc': 'Dispositivos suspeitos cobrem o chão. Cuidado ao agir.',
+    'room.sala_combate.desc': 'Uma presença hostil bloqueia a passagem. Você precisa escapar.',
     'room.fim_de_jogo.desc': 'Sua jornada termina aqui — por enquanto.',
 
     // --- [NEW] Variações para Sala Vazia (7 seleções possíveis) ---
@@ -54,7 +56,12 @@ export const LOCALES = {
     'action.desarmar': 'Desarmar',
     'action.forcar': 'Forçar',
     'action.analisar': 'Analisar',
+    'action.fugir': 'Fugir',
     'action.jogar_novamente': 'Jogar Novamente',
+
+    // --- Combate / fuga ---
+    'combat.flee_success': 'Fuga bem-sucedida',
+    'combat.flee_fail': 'Fuga falhou',
 
     // --- Mensagens iniciais (intro) ---
     'intro.1': '...',

@@ -72,6 +72,19 @@ export const ROOMS = {
     ]
   },
 
+  'sala_combate': {
+    id: 'sala_combate',
+    titleKey: 'room.sala_combate.title',
+    descKey:  'room.sala_combate.desc',
+    bg: 'assets/bg/sala_vazia.jpg',
+    actions: [
+      null,
+      null,
+      null,
+      { labelKey: 'action.fugir', role: 'flee', effects: [] }
+    ]
+  },
+
   'fim_de_jogo': {
     id: 'fim_de_jogo',
     titleKey: 'room.fim_de_jogo.title',

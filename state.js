@@ -31,6 +31,12 @@ export const STATE = {
   // [STATE] Sinalizador de sessão para logs introdutórios
   bootInitLogged: false, // [NEW] evita duplicar mensagens de abertura no mesmo boot
 
+  // [STATE] Bônus volátil: o próximo sorteio de sala usa 50% de chance real para sala_vazia.
+  nextRoomEmptyChanceRealBoost: false,
+
+  // [STATE] Inimigo atual da sala de combate (instância mutável, volátil; null fora de combate).
+  currentCombatEnemy: null,
+
   // [STATE] Jogador (BASE)
   player: {
     // Status atuais (BASE)

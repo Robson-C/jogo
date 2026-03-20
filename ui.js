@@ -16,7 +16,15 @@ let els = {
   roomDesc: null,
   roomSection: null,
   actions: [],
-  logView: null
+  logView: null,
+  enemyCard: null,
+  enemyName: null,
+  enemyHpBar: null,
+  enemyHpFill: null,
+  enemyStatAtk: null,
+  enemyStatDef: null,
+  enemyStatAcc: null,
+  enemyStatAgi: null
 };
 
 // [STATE-UI] cache leve para modal
@@ -45,6 +53,15 @@ export function initUI() {
     document.getElementById('act-4')
   ].filter(Boolean);
   els.logView = document.querySelector('.log-view');
+  els.enemyCard = document.querySelector('.enemy-card');
+  els.enemyName = els.enemyCard ? els.enemyCard.querySelector('.enemy-name') : null;
+  els.enemyHpBar = els.enemyCard ? els.enemyCard.querySelector('.enemy-hp') : null;
+  els.enemyHpFill = els.enemyHpBar ? els.enemyHpBar.querySelector('.fill') : null;
+  const enemyChips = els.enemyCard ? els.enemyCard.querySelectorAll('.enemy-stats .stat-chip') : [];
+  els.enemyStatAtk = enemyChips[0] || null;
+  els.enemyStatDef = enemyChips[1] || null;
+  els.enemyStatAcc = enemyChips[2] || null;
+  els.enemyStatAgi = enemyChips[3] || null;
   ensureLogLines();
 
   // Modal de histórico
@@ -88,6 +105,78 @@ export function setRoomBackground(urlOrNull) {
   const val = (urlOrNull && typeof urlOrNull === 'string' && urlOrNull.trim())
     ? `url("${urlOrNull}")` : 'none';
   try { els.roomSection.style.setProperty('--room-bg', val); } catch (_) {}
+}
+
+
+/* Cartão de inimigo: exibe nome, vida e atributos quando houver combate ativo */
+export function renderEnemyCard(enemy) {
+  if (!els.enemyCard) els.enemyCard = document.querySelector('.enemy-card');
+  if (!els.enemyCard) return;
+
+  if (!enemy || typeof enemy !== 'object') {
+    clearEnemyCard();
+    return;
+  }
+
+  if (!els.enemyName) els.enemyName = els.enemyCard.querySelector('.enemy-name');
+  if (!els.enemyHpBar) els.enemyHpBar = els.enemyCard.querySelector('.enemy-hp');
+  if (!els.enemyHpFill && els.enemyHpBar) els.enemyHpFill = els.enemyHpBar.querySelector('.fill');
+  if (!els.enemyStatAtk || !els.enemyStatDef || !els.enemyStatAcc || !els.enemyStatAgi) {
+    const enemyChips = els.enemyCard.querySelectorAll('.enemy-stats .stat-chip');
+    els.enemyStatAtk = enemyChips[0] || null;
+    els.enemyStatDef = enemyChips[1] || null;
+    els.enemyStatAcc = enemyChips[2] || null;
+    els.enemyStatAgi = enemyChips[3] || null;
+  }
+
+  const maxVida = Math.max(1, Math.floor(Number(enemy.maxVida) || 1));
+  const vida = Math.max(0, Math.min(maxVida, Math.floor(Number(enemy.vida) || 0)));
+  const pct = Math.round((vida / maxVida) * 100);
+
+  if (els.enemyName) els.enemyName.textContent = `${String(enemy.name || 'Inimigo')} — ${vida}/${maxVida}`;
+  if (els.enemyHpBar) {
+    els.enemyHpBar.setAttribute('aria-valuemin', '0');
+    els.enemyHpBar.setAttribute('aria-valuemax', String(maxVida));
+    els.enemyHpBar.setAttribute('aria-valuenow', String(vida));
+  }
+  if (els.enemyHpFill) els.enemyHpFill.style.width = `${pct}%`;
+
+  if (els.enemyStatAtk) els.enemyStatAtk.textContent = String(Math.max(0, Math.floor(Number(enemy.ataque ?? enemy.forca) || 0)));
+  if (els.enemyStatDef) els.enemyStatDef.textContent = String(Math.max(0, Math.floor(Number(enemy.defesa) || 0)));
+  if (els.enemyStatAcc) els.enemyStatAcc.textContent = String(Math.max(0, Math.floor(Number(enemy.precisao) || 0)));
+  if (els.enemyStatAgi) els.enemyStatAgi.textContent = String(Math.max(0, Math.floor(Number(enemy.agilidade) || 0)));
+
+  try { els.enemyCard.hidden = false; } catch (_) {}
+}
+
+export function clearEnemyCard() {
+  if (!els.enemyCard) els.enemyCard = document.querySelector('.enemy-card');
+  if (!els.enemyCard) return;
+
+  if (!els.enemyName) els.enemyName = els.enemyCard.querySelector('.enemy-name');
+  if (!els.enemyHpBar) els.enemyHpBar = els.enemyCard.querySelector('.enemy-hp');
+  if (!els.enemyHpFill && els.enemyHpBar) els.enemyHpFill = els.enemyHpBar.querySelector('.fill');
+  if (!els.enemyStatAtk || !els.enemyStatDef || !els.enemyStatAcc || !els.enemyStatAgi) {
+    const enemyChips = els.enemyCard.querySelectorAll('.enemy-stats .stat-chip');
+    els.enemyStatAtk = enemyChips[0] || null;
+    els.enemyStatDef = enemyChips[1] || null;
+    els.enemyStatAcc = enemyChips[2] || null;
+    els.enemyStatAgi = enemyChips[3] || null;
+  }
+
+  if (els.enemyName) els.enemyName.textContent = 'Inimigo';
+  if (els.enemyHpBar) {
+    els.enemyHpBar.setAttribute('aria-valuemin', '0');
+    els.enemyHpBar.setAttribute('aria-valuemax', '100');
+    els.enemyHpBar.setAttribute('aria-valuenow', '100');
+  }
+  if (els.enemyHpFill) els.enemyHpFill.style.width = '100%';
+  if (els.enemyStatAtk) els.enemyStatAtk.textContent = '0';
+  if (els.enemyStatDef) els.enemyStatDef.textContent = '0';
+  if (els.enemyStatAcc) els.enemyStatAcc.textContent = '0';
+  if (els.enemyStatAgi) els.enemyStatAgi.textContent = '0';
+
+  try { els.enemyCard.hidden = true; } catch (_) {}
 }
 
 export function setActionLabel(index, text) {
