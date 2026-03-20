@@ -389,7 +389,7 @@ body{
 /* =====================[ FIM TRECHO 6 ]===================== */
 
 
-/* =====================[ TRECHO 7: PAINEL DE SALA / INIMIGO ]===================== */
+/* =====================[ TRECHO 7: PAINEL DE CENA (SALA / INIMIGO) ]===================== */
 .room{
   --room-bg: none;
   position: relative;
@@ -410,6 +410,11 @@ body{
   display:flex;
   flex-direction:column;
   justify-content:space-between;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-image 160ms ease,
+    background-color 160ms ease;
 }
 .room::after{
   content: "";
@@ -418,11 +423,41 @@ body{
   background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0));
   pointer-events: none;
 }
-.room.room--info{
-  justify-content: center;
-  gap: 1.2rem;
+.scene-slot{
+  display: block;
 }
-
+.scene-slot[data-scene-mode="enemy"]{
+  border-color: rgba(130, 62, 76, 0.55);
+  background-color: #fff7f8;
+  background-image:
+    linear-gradient(180deg, rgba(255,247,248,0.96), rgba(242, 225, 226, 0.94)),
+    radial-gradient(circle at 100% 0%, rgba(210, 89, 113, 0.16), transparent 34%),
+    radial-gradient(circle at 0% 100%, rgba(93, 66, 184, 0.12), transparent 30%),
+    var(--room-bg);
+  box-shadow:
+    0 1rem 2rem rgba(70, 33, 44, 0.12),
+    inset 0 0.1rem 0 rgba(255,255,255,0.75);
+}
+.scene-slot[data-scene-mode="enemy"]::after{
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02)),
+    linear-gradient(135deg, rgba(217, 90, 98, 0.08), transparent 38%);
+}
+.scene-panel{
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+}
+.scene-panel[hidden]{ display:none !important; }
+.scene-panel--room{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap: 1.2rem;
+  text-align: center;
+}
 .room-title{
   position: relative;
   margin: 0;
@@ -444,7 +479,6 @@ body{
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(185, 135, 46, 0), rgba(185, 135, 46, 0.9), rgba(93, 66, 184, 0.95), rgba(93, 66, 184, 0));
 }
-
 .room-desc{
   margin: 0;
   padding: 0 0.8rem;
@@ -454,27 +488,168 @@ body{
   color: var(--muted);
   user-select: none;
 }
-
-.enemy-card{
+.enemy-panel{
+  --enemy-accent: #d95a62;
+  --enemy-accent-2: #8f3847;
+  --enemy-glow: rgba(217, 90, 98, 0.18);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.9rem;
+  min-width: 0;
+  padding: 0.05rem 0;
+}
+.enemy-panel[data-theme="verdant"]{
+  --enemy-accent: #4fbf66;
+  --enemy-accent-2: #2f8a59;
+  --enemy-glow: rgba(79, 191, 102, 0.18);
+}
+.enemy-panel[data-theme="arcane"]{
+  --enemy-accent: #6e7dff;
+  --enemy-accent-2: #4f56bc;
+  --enemy-glow: rgba(110, 125, 255, 0.18);
+}
+.enemy-panel[data-theme="beast"]{
+  --enemy-accent: #ee9a43;
+  --enemy-accent-2: #a95e1f;
+  --enemy-glow: rgba(238, 154, 67, 0.18);
+}
+.enemy-panel[data-theme="stone"]{
+  --enemy-accent: #9ca3b2;
+  --enemy-accent-2: #677181;
+  --enemy-glow: rgba(156, 163, 178, 0.16);
+}
+.enemy-panel[data-theme="spectral"]{
+  --enemy-accent: #6fc6de;
+  --enemy-accent-2: #3b7898;
+  --enemy-glow: rgba(111, 198, 222, 0.18);
+}
+.enemy-panel[data-theme="void"]{
+  --enemy-accent: #b67cff;
+  --enemy-accent-2: #6e46a9;
+  --enemy-glow: rgba(182, 124, 255, 0.18);
+}
+.enemy-panel[data-theme="holy"]{
+  --enemy-accent: #e7b953;
+  --enemy-accent-2: #b07a18;
+  --enemy-glow: rgba(231, 185, 83, 0.16);
+}
+.enemy-panel__watermark,
+.enemy-panel__top,
+.enemy-panel__hp,
+.enemy-panel__stats{
+  position: relative;
+  z-index: 1;
+}
+.enemy-panel__watermark{
+  position: absolute;
+  right: 0.15rem;
+  bottom: -0.1rem;
+  z-index: 0;
+  pointer-events: none;
+}
+.enemy-panel__glyph{
+  display: block;
+  font-size: 6.2rem;
+  line-height: 1;
+  opacity: 0.1;
+  filter: saturate(0.8);
+}
+.enemy-panel__top{
   display: grid;
-  grid-template-rows: auto auto auto;
-  row-gap: 0.8rem;
-  padding: 1rem;
-  border-radius: 1.2rem;
-  background: rgba(255,255,255,0.62);
-  border: 0.1rem solid rgba(107, 93, 82, 0.08);
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: start;
 }
-
-.enemy-card[hidden] { display: none; }
-
-.enemy-name{
+.enemy-panel__name{
   margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: var(--text);
+  min-width: 0;
+  font-size: 1.95rem;
+  font-weight: 900;
+  line-height: 1.05;
+  color: #4b2330;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
-.enemy-hp{ height: 1rem; }
+.enemy-panel__meta{
+  display: grid;
+  justify-items: end;
+  gap: 0.35rem;
+}
+.enemy-panel__badge{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 5.6rem;
+  padding: 0.28rem 0.58rem;
+  border-radius: 999px;
+  border: 0.1rem solid rgba(130, 62, 76, 0.16);
+  background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(255,255,255,0.62));
+  box-shadow: inset 0 0.1rem 0 rgba(255,255,255,0.75);
+  font-size: 0.98rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  color: #8f3847;
+}
+.enemy-panel__hp-value{
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.52);
+  border: 0.1rem solid rgba(130, 62, 76, 0.1);
+  font-size: 1.28rem;
+  font-weight: 900;
+  color: #5e2f3a;
+}
+.enemy-panel__hp{
+  position: relative;
+  height: 1.1rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(160, 127, 132, 0.24), rgba(112, 84, 90, 0.2));
+  border: 0.1rem solid rgba(130, 62, 76, 0.12);
+  box-shadow: inset 0 0.18rem 0.4rem rgba(60, 28, 37, 0.12);
+}
+.enemy-panel__hp-fill{
+  position:absolute;
+  inset:0 auto 0 0;
+  width:0%;
+  border-radius:inherit;
+  background: linear-gradient(90deg, var(--enemy-accent), #ff6b71 48%, #d93f54 100%);
+  box-shadow: inset 0 0.12rem 0 rgba(255,255,255,0.22), 0 0 0.8rem var(--enemy-glow);
+}
+.enemy-panel__stats{
+  display:grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.enemy-stat{
+  min-height: 3.25rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap: 0.32rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 1rem;
+  border: 0.1rem solid rgba(130, 62, 76, 0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.75), rgba(250, 239, 240, 0.58));
+  box-shadow: inset 0 0.1rem 0 rgba(255,255,255,0.72), 0 0.24rem 0.55rem rgba(70, 33, 44, 0.06);
+}
+.enemy-stat__icon{
+  flex: 0 0 auto;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.enemy-stat__value{
+  display:block;
+  min-width: 0;
+  font-size: 1.72rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #4b2330;
+}
 /* =====================[ FIM TRECHO 7 ]===================== */
 
 /* =====================[ TRECHO 7.1: RUNLINE (DIA/ANDAR) ]===================== */

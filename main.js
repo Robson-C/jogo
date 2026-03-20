@@ -7,6 +7,7 @@
 import { initI18n, onLocaleChange, applyI18nToDOM, t } from './i18n.js';
 import { STATE, initSeed, getDay, initPlayerDefaults, appendLog, getLogLastNTexts } from './state.js'; // [CHANGE]
 import { initUI, bindActions, setRunlineDay, renderHUD, renderLog } from './ui.js'; // [CHANGE]
+import { initScenePanel } from './scene_panel.js';
 import { handleAction, renderRoom } from './engine.js';
 
 function boot() {
@@ -15,6 +16,7 @@ function boot() {
   initPlayerDefaults(); // [CHANGE] define 100/100 nos status e XP=0
 
   initUI();
+  initScenePanel();
 
   // Exibe o status do dia na runline
   setRunlineDay(getDay());

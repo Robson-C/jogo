@@ -19,18 +19,18 @@ import {
   addDay, getDay, setDay, initPlayerDefaults, clearAllModifiers,
   getEffectiveStatus, getEffectiveStatusMax // [CHANGE] novo import para pct do máximo
 } from './state.js';
-import { setRoomTitle, setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, renderHUD, setRoomDesc, setRoomBackground, renderEnemyCard, clearEnemyCard } from './ui.js';
+import { setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, renderHUD } from './ui.js';
+import { showRoomPanel, showEnemyPanel } from './scene_panel.js';
 import { ROOMS, ROOM_IDS } from './rooms.js';
 import { t } from './i18n.js';
-import { pickEnemyForFloor } from './enemies.js';
+import { ensureEncounterForCurrentRoom, clearCurrentEncounter, isCombatEncounterRoom } from './encounter.js';
+import { isPlayerCombatTurn, queueCombatPlayerAction, resolvePendingEnemyTurn } from './combat_flow.js';
 
 /* [STATE] Lock para anti multi-input (desbloqueado no próximo rAF) */
 let inputLocked = false;
 
 /* ID canônico de sala especial */
 const GAME_OVER_ROOM_ID = 'fim_de_jogo';
-const COMBAT_ROOM_ID = 'sala_combate';
-const COMBAT_ENEMY_FLOOR = 1;
 /* =====================[ FIM TRECHO 1 ]===================== */
 
 
@@ -85,7 +85,7 @@ function pickRoomDescVariant(roomId) {
 /* =====================[ TRECHO 4: Utilitários de Sala (flags, transições) ]===================== */
 /** [DOC] Predicados de tipo de sala */
 function isTrapRoom(roomId)    { return String(roomId) === 'sala_armadilha'; }
-function isCombatRoom(roomId)  { return String(roomId) === COMBAT_ROOM_ID; }
+function isCombatRoom(roomId)  { return isCombatEncounterRoom(roomId); }
 function isGameOverRoom(roomId){ return String(roomId) === GAME_OVER_ROOM_ID; }
 
 /**
@@ -97,20 +97,12 @@ function logRoomEntry(/* roomId */) {
 }
 
 function clearCombatEnemy() {
-  STATE.currentCombatEnemy = null;
+  clearCurrentEncounter();
 }
 
 function ensureCombatEnemy() {
-  if (!isCombatRoom(STATE.currentRoomId)) {
-    clearCombatEnemy();
-    return null;
-  }
-  if (STATE.currentCombatEnemy && typeof STATE.currentCombatEnemy === 'object') {
-    return STATE.currentCombatEnemy;
-  }
-  const enemy = pickEnemyForFloor(COMBAT_ENEMY_FLOOR, nextRandom);
-  STATE.currentCombatEnemy = enemy || null;
-  return STATE.currentCombatEnemy;
+  const encounter = ensureEncounterForCurrentRoom();
+  return encounter && encounter.enemy ? encounter.enemy : null;
 }
 
 /** [DOC] Reinicia a run (mantém seed/RNG); limpa mods; reseta jogador e Dia; volta à sala inicial. */
@@ -122,6 +114,7 @@ function restartRun() {
   STATE.nextRoomEmptyChanceRealBoost = false;
   clearCombatEnemy();
   STATE.currentRoomId = 'sala_vazia';
+  setRunlineDay(getDay());
   renderRoom();
   renderHUD();
 }
@@ -260,32 +253,30 @@ export function renderRoom() {
   const trap = isTrapRoom(STATE.currentRoomId);
   const combat = isCombatRoom(STATE.currentRoomId);
   const isGO = isGameOverRoom(STATE.currentRoomId);
-  const combatEnemy = combat ? ensureCombatEnemy() : null;
+  const sceneMode = room.sceneMode === 'enemy' ? 'enemy' : 'room';
 
-  if (combat) renderEnemyCard(combatEnemy);
-  else {
-    clearCombatEnemy();
-    clearEnemyCard();
-  }
-
-  // Título
-  if (isGO) {
-    const base = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || 'Fim de Jogo');
-    setRoomTitle(`${base} — Pontuação: 0`); // [TODO] pontuação futura
+  // Scene panel: modo exclusivo por sala.
+  if (sceneMode === 'enemy') {
+    const encounter = ensureEncounterForCurrentRoom();
+    showEnemyPanel(encounter && encounter.enemy ? encounter.enemy : null, { backgroundUrl: room.bg || null });
   } else {
-    const title = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || '');
-    setRoomTitle(title);
+    clearCombatEnemy();
+
+    let title = '';
+    if (isGO) {
+      const base = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || 'Fim de Jogo');
+      title = `${base} — Pontuação: 0`;
+    } else {
+      title = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || '');
+    }
+
+    const altDesc = pickRoomDescVariant(STATE.currentRoomId);
+    const desc = altDesc != null
+      ? altDesc
+      : (room.descKey ? t(room.descKey, room.desc || '') : (room.desc || ''));
+
+    showRoomPanel({ title, desc: desc || '', backgroundUrl: room.bg || null });
   }
-
-  // Descrição (UI apenas; sem log)
-  const altDesc = pickRoomDescVariant(STATE.currentRoomId);
-  const desc = altDesc != null
-    ? altDesc
-    : (room.descKey ? t(room.descKey, room.desc || '') : (room.desc || ''));
-  setRoomDesc(desc || '');
-
-  // Background
-  setRoomBackground(room.bg || null);
 
   // Game Over: 3 inativos + "Jogar Novamente"
   if (isGO) {
@@ -295,14 +286,24 @@ export function renderRoom() {
     return;
   }
 
-  // Sala de combate: apenas fuga no slot 4
+  // Sala de combate: slot 1 = atacar, slot 4 = fugir
   if (combat) {
-    for (let i = 0; i < 3; i++) { setActionLabel(i, ''); enableAction(i, false); }
+    const playerTurn = isPlayerCombatTurn();
+
+    const attackAction = room.actions?.[0];
+    const attackLabel = attackAction?.labelKey
+      ? t(attackAction.labelKey, attackAction.label || '')
+      : (attackAction?.label || '');
+    setActionLabel(0, attackLabel);
+    enableAction(0, !!attackAction && playerTurn);
+
+    for (let i = 1; i < 3; i++) { setActionLabel(i, ''); enableAction(i, false); }
+
     const fleeAction = room.actions?.[3];
     const baseLabel = fleeAction?.labelKey ? t(fleeAction.labelKey, fleeAction.label || '') : (fleeAction?.label || '');
     const suffix = _formatEffectsForButton(fleeAction, 'flee');
     setActionLabel(3, suffix ? `${baseLabel} ${suffix}` : baseLabel);
-    enableAction(3, true);
+    enableAction(3, !!fleeAction && playerTurn);
     return;
   }
 
@@ -331,7 +332,7 @@ export function renderRoom() {
       let enabled = true;
       if (trap) {
         if (role === 'explore') {
-          enabled = anyNonExploreUsed;        // só habilita após usar uma não-explorar
+          enabled = anyNonExploreUsed;
         } else {
           enabled = !anyNonExploreUsed && !isActionUsedToday(STATE.currentRoomId, i);
         }
@@ -365,6 +366,13 @@ function runEffectsCollectMessages(effects) {
   const ATR_LABEL  = { ataque:'Ataque', defesa:'Defesa', precisao:'Precisão', agilidade:'Agilidade' };
 
   const toInt = (n) => Math.trunc(Number(n) || 0);
+  const applyStatusAndGetRealDelta = (key, delta) => {
+    if (typeof key !== 'string' || !Number.isFinite(delta)) return 0;
+    const before = getEffectiveStatus(key);
+    PlayerAPI.addStatus(key, delta);
+    const after = getEffectiveStatus(key);
+    return toInt(after - before);
+  };
 
   for (let i = 0; i < effects.length; i++) {
     const eff = effects[i];
@@ -378,9 +386,9 @@ function runEffectsCollectMessages(effects) {
       case 'statusDelta': {
         const { key, delta } = eff;
         if (typeof key === 'string' && Number.isFinite(delta)) {
-          PlayerAPI.addStatus(key, delta);
+          const realDelta = applyStatusAndGetRealDelta(key, delta);
           const label = STAT_LABEL[key] || key;
-          msgs.push(`${delta >= 0 ? '+' : ''}${toInt(delta)} ${label}`);
+          if (realDelta !== 0) msgs.push(`${realDelta >= 0 ? '+' : ''}${toInt(realDelta)} ${label}`);
         }
         break;
       }
@@ -390,9 +398,9 @@ function runEffectsCollectMessages(effects) {
           const maxEff = getEffectiveStatusMax(key);
           const delta = Math.floor(Math.max(0, pct) * Math.max(0, maxEff));
           if (delta !== 0) {
-            PlayerAPI.addStatus(key, delta);
+            const realDelta = applyStatusAndGetRealDelta(key, delta);
             const label = STAT_LABEL[key] || key;
-            msgs.push(`+${toInt(delta)} ${label}`);
+            if (realDelta !== 0) msgs.push(`${realDelta >= 0 ? '+' : ''}${toInt(realDelta)} ${label}`);
           } else {
             // delta 0 → sem mensagem (mantém política minimalista)
           }
@@ -512,6 +520,13 @@ export function handleAction(idx) {
     const eventLabel = action.labelKey
       ? t(action.labelKey, '')
       : _stripButtonSuffix(getActionLabel(idx));
+    const applyStatusAndGetRealDelta = (key, delta) => {
+      if (typeof key !== 'string' || !Number.isFinite(delta)) return 0;
+      const before = getEffectiveStatus(key);
+      PlayerAPI.addStatus(key, delta);
+      const after = getEffectiveStatus(key);
+      return Math.trunc(after - before);
+    };
 
     if (role === 'act' && isActionUsedToday(STATE.currentRoomId, idx)) {
       return; // 1x/dia por ação 'act'
@@ -524,9 +539,10 @@ export function handleAction(idx) {
     const effectMsgs = [];
 
     if (role === 'flee') {
-      PlayerAPI.addStatus('energia', -FLEE_ENERGY_COST);
-      PlayerAPI.addStatus('sanidade', -FLEE_SANITY_COST);
-      effectMsgs.push(`-${FLEE_ENERGY_COST} Energia`, `-${FLEE_SANITY_COST} Sanidade`);
+      const fleeEnergyDelta = applyStatusAndGetRealDelta('energia', -FLEE_ENERGY_COST);
+      const fleeSanityDelta = applyStatusAndGetRealDelta('sanidade', -FLEE_SANITY_COST);
+      if (fleeEnergyDelta !== 0) effectMsgs.push(`${fleeEnergyDelta >= 0 ? '+' : ''}${fleeEnergyDelta} Energia`);
+      if (fleeSanityDelta !== 0) effectMsgs.push(`${fleeSanityDelta >= 0 ? '+' : ''}${fleeSanityDelta} Sanidade`);
 
       const success = nextRandom() < FLEE_SUCCESS_CHANCE;
       if (success) {
@@ -540,8 +556,13 @@ export function handleAction(idx) {
         renderRoom();
       } else {
         effectMsgs.push(t('combat.flee_fail', 'Fuga falhou'));
-        renderRoom();
+        const combatStep = queueCombatPlayerAction('flee_failed');
+        if (!combatStep.ok) return;
       }
+    } else if (role === 'combat_attack') {
+      const combatStep = queueCombatPlayerAction('attack');
+      if (!combatStep.ok) return;
+      effectMsgs.push(...combatStep.playerMsgs);
     } else {
       effectMsgs.push(...runEffectsCollectMessages(action.effects || []));
     }
@@ -559,8 +580,8 @@ export function handleAction(idx) {
     // 2) Papel especial: explorar (aplica custo/ganho padrão e transita de sala)
     if (role === 'explore') {
       // [CHANGE] Custo padrão: -10 energia (sem XP)
-      PlayerAPI.addStatus('energia', -10);
-      effectMsgs.push('-10 Energia');
+      const exploreEnergyDelta = applyStatusAndGetRealDelta('energia', -10);
+      if (exploreEnergyDelta !== 0) effectMsgs.push(`${exploreEnergyDelta >= 0 ? '+' : ''}${exploreEnergyDelta} Energia`);
 
       // Avança o dia, reseta uso de ações
       addDay(1);
@@ -593,6 +614,17 @@ export function handleAction(idx) {
       const tail = effectMsgs.length ? ` ${effectMsgs.join(', ')}` : '';
       appendLog({ sev: 'mod', msg: `${String(eventLabel)}:${tail}`, ctx: { day: getDay() } });
     }
+
+    if (role === 'combat_attack' || (role === 'flee' && effectMsgs.includes(t('combat.flee_fail', 'Fuga falhou')))) {
+      const enemyStep = resolvePendingEnemyTurn();
+      if (enemyStep.ok) {
+        for (const msg of enemyStep.enemyLogs) {
+          appendLog({ sev: 'combat', msg, ctx: { day: getDay() } });
+        }
+        renderRoom();
+      }
+    }
+
     renderLog(getLogLastNTexts(4));
   });
 }

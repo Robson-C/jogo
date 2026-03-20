@@ -15,7 +15,7 @@
  *   - Cap = 50; barra cheia no cap; XP total continua acumulando (sem efeito prático).
  * - [NEW] Flag volátil de sessão `bootInitLogged` para evitar relogar as mensagens iniciais.
  */
-export const VERSION = '0.7.0-xp-level-capA';
+export const VERSION = '0.8.0-scene-encounter-split';
 
 export const STATE = {
   version: VERSION,
@@ -34,7 +34,10 @@ export const STATE = {
   // [STATE] Bônus volátil: o próximo sorteio de sala usa 50% de chance real para sala_vazia.
   nextRoomEmptyChanceRealBoost: false,
 
-  // [STATE] Inimigo atual da sala de combate (instância mutável, volátil; null fora de combate).
+  // [STATE] Encontro atual da cena (volátil; null fora de salas com encontro).
+  encounter: null,
+
+  // [STATE][LEGACY] Mantido apenas por compatibilidade transitória com versões anteriores.
   currentCombatEnemy: null,
 
   // [STATE] Jogador (BASE)

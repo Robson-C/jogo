@@ -8,6 +8,7 @@
 export const ROOMS = {
   'sala_vazia': {
     id: 'sala_vazia',
+    sceneMode: 'room',
     titleKey: 'room.sala_vazia.title',
     descKey:  'room.sala_vazia.desc',
     bg: 'assets/bg/sala_vazia.jpg',
@@ -34,6 +35,7 @@ export const ROOMS = {
 
   'sala_fonte': {
     id: 'sala_fonte',
+    sceneMode: 'room',
     titleKey: 'room.sala_fonte.title',
     descKey:  'room.sala_fonte.desc',
     bg: 'assets/bg/sala_fonte.jpg',
@@ -60,6 +62,7 @@ export const ROOMS = {
 
   'sala_armadilha': {
     id: 'sala_armadilha',
+    sceneMode: 'room',
     titleKey: 'room.sala_armadilha.title',
     descKey:  'room.sala_armadilha.desc',
     bg: 'assets/bg/sala_armadilha.jpg',
@@ -74,11 +77,12 @@ export const ROOMS = {
 
   'sala_combate': {
     id: 'sala_combate',
-    titleKey: 'room.sala_combate.title',
-    descKey:  'room.sala_combate.desc',
+    sceneMode: 'enemy',
+    encounterType: 'combat',
+    encounterFloor: 1,
     bg: 'assets/bg/sala_vazia.jpg',
     actions: [
-      null,
+      { label: 'Atacar', role: 'combat_attack', effects: [] },
       null,
       null,
       { labelKey: 'action.fugir', role: 'flee', effects: [] }
@@ -87,6 +91,7 @@ export const ROOMS = {
 
   'fim_de_jogo': {
     id: 'fim_de_jogo',
+    sceneMode: 'room',
     titleKey: 'room.fim_de_jogo.title',
     descKey:  'room.fim_de_jogo.desc',
     bg: 'assets/bg/fim_de_jogo.jpg',

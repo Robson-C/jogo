@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <!-- =====================[ TRECHO 1: DOCUMENTO & HEAD ]===================== -->
 <html lang="pt-BR">
 <head>
@@ -18,7 +19,7 @@
   <div class="rotate-overlay">
     <div class="rotate-card">
       <div class="rotate-emoji" aria-hidden="true">📱↻</div>
-      <p data-i18n="ui.rotate">Gire o dispositivo para <strong>retrato</strong>.</p>
+      <p data-i18n="ui.rotate">Gire o aparelho para continuar.</p>
     </div>
   </div>
   <!-- =====================[ FIM TRECHO 2 ]===================== -->
@@ -100,29 +101,46 @@
       </section>
       <!-- =====================[ FIM TRECHO 6 ]===================== -->
 
-      <!-- =====================[ TRECHO 7: PAINEL DE SALA / INIMIGO ]===================== -->
-      <section class="room room--info" aria-label="Sala atual">
-        <h2 class="room-title" aria-live="polite">Sala Vazia</h2>
+      <!-- =====================[ TRECHO 7: PAINEL DE CENA (SALA / INIMIGO) ]===================== -->
+      <section class="room scene-slot" aria-label="Sala atual" data-scene-mode="room">
+        <article class="scene-panel scene-panel--room">
+          <h2 class="room-title" aria-live="polite">Sala Vazia</h2>
+          <p class="room-desc" data-i18n="room.sala_vazia.desc">Uma sala silenciosa e vazia.</p>
+        </article>
 
-        <!-- [CHANGE][DOC] Descrição simples padronizada da sala (texto puro) -->
-        <p class="room-desc" data-i18n="room.sala_vazia.desc">Uma sala silenciosa e vazia.</p>
+        <article class="scene-panel scene-panel--enemy enemy-panel" aria-label="Inimigo atual" data-theme="hostile" hidden>
+          <div class="enemy-panel__watermark" aria-hidden="true">
+            <span class="enemy-panel__glyph">☠️</span>
+          </div>
 
-        <!-- Cartão do inimigo (visível apenas quando o atributo [hidden] for removido via JS) -->
-        <article class="enemy-card" hidden>
-          <!-- [DOC] enemy-head é um *hook* de layout futuro; hoje não há estilo específico. -->
-          <div class="enemy-head">
-            <div class="enemy-name" aria-live="polite">Inimigo</div>
-            <div class="enemy-hp bar" role="progressbar" data-i18n-aria="ui.stats.hp" aria-label="HP do inimigo" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
-              <div class="fill hp" style="width:100%"></div>
+          <div class="enemy-panel__top">
+            <div class="enemy-panel__name" aria-live="polite">Inimigo</div>
+            <div class="enemy-panel__meta">
+              <span class="enemy-panel__badge">HOSTIL</span>
+              <span class="enemy-panel__hp-value">0/0</span>
             </div>
           </div>
 
-          <div class="enemy-stats">
-            <div class="secstats-grid" aria-label="Status do inimigo">
-              <div class="stat-chip stat-chip--atk" data-i18n-title="ui.attr.atk" title="Ataque do inimigo" aria-label="Ataque do inimigo">0</div>
-              <div class="stat-chip stat-chip--def" data-i18n-title="ui.attr.def" title="Defesa do inimigo" aria-label="Defesa do inimigo">0</div>
-              <div class="stat-chip stat-chip--acc" data-i18n-title="ui.attr.acc" title="Precisão do inimigo" aria-label="Precisão do inimigo">0</div>
-              <div class="stat-chip stat-chip--agi" data-i18n-title="ui.attr.agi" title="Agilidade do inimigo" aria-label="Agilidade do inimigo">0</div>
+          <div class="enemy-panel__hp" role="progressbar" data-i18n-aria="ui.stats.hp" aria-label="HP do inimigo" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+            <div class="enemy-panel__hp-fill" style="width:100%"></div>
+          </div>
+
+          <div class="enemy-panel__stats" aria-label="Status do inimigo">
+            <div class="enemy-stat enemy-stat--atk" data-i18n-title="ui.attr.atk" title="Ataque do inimigo" aria-label="Ataque do inimigo">
+              <span class="enemy-stat__icon" aria-hidden="true">⚔️</span>
+              <span class="enemy-stat__value">0</span>
+            </div>
+            <div class="enemy-stat enemy-stat--def" data-i18n-title="ui.attr.def" title="Defesa do inimigo" aria-label="Defesa do inimigo">
+              <span class="enemy-stat__icon" aria-hidden="true">🛡️</span>
+              <span class="enemy-stat__value">0</span>
+            </div>
+            <div class="enemy-stat enemy-stat--acc" data-i18n-title="ui.attr.acc" title="Precisão do inimigo" aria-label="Precisão do inimigo">
+              <span class="enemy-stat__icon" aria-hidden="true">🎯</span>
+              <span class="enemy-stat__value">0</span>
+            </div>
+            <div class="enemy-stat enemy-stat--agi" data-i18n-title="ui.attr.agi" title="Agilidade do inimigo" aria-label="Agilidade do inimigo">
+              <span class="enemy-stat__icon" aria-hidden="true">💨</span>
+              <span class="enemy-stat__value">0</span>
             </div>
           </div>
         </article>
