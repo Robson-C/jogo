@@ -11,6 +11,8 @@
  *  - statusDeltaPctOfMax { key:'energia', pct:0.8 }
  *  - xpDeltaRange { min:5, max:10 }
  * [CHANGE] Explorar: **remove XP**; mantém apenas **-10 Energia**.
+ * [CHANGE] Sala vazia e sala fonte agora são salas de escolha única:
+ *   o jogador pode explorar sem usar nada, mas só pode usar 1 ação local por sala.
  */
 import {
   STATE, nextRandom, getLogLastNTexts, appendLog,
@@ -141,7 +143,7 @@ function checkGameOverByEnergy() {
  * - Sala de Game Over: apenas "Jogar Novamente" no slot 4.
  *
  * [CHANGE][WHY] Botões agora exibem custo/benefício no texto:
- *   Ex.: "Explorar [-10 ⚡]", "Meditar [+20% ⚡ +60% 🧠]", "Treinar [+5–10 ⭐]"
+ *   Ex.: "Explorar [-10 ⚡]", "Meditar [+20% 💧 +45% 🧠]", "Tratar feridas [+40% ❤️]"
  */
 const STAT_EMOJI = { vida:'❤️', energia:'⚡', mana:'💧', sanidade:'🧠' };
 const ATR_EMOJI  = { ataque:'⚔️', defesa:'🛡️', precisao:'🎯', agilidade:'💨' };
@@ -307,9 +309,10 @@ export function renderRoom() {
     return;
   }
 
-  // Regras normais (inclui sala armadilha)
+  // Regras normais (inclui sala armadilha e salas de escolha única)
   let anyNonExploreUsed = false;
-  if (trap) {
+  const singleChoiceActs = !!room.singleChoiceActs;
+  if (trap || singleChoiceActs) {
     for (let j = 0; j < 4; j++) {
       const aj = room.actions?.[j];
       const roleJ = aj ? (aj.role || 'act') : 'act';
@@ -333,6 +336,12 @@ export function renderRoom() {
       if (trap) {
         if (role === 'explore') {
           enabled = anyNonExploreUsed;
+        } else {
+          enabled = !anyNonExploreUsed && !isActionUsedToday(STATE.currentRoomId, i);
+        }
+      } else if (singleChoiceActs) {
+        if (role === 'explore') {
+          enabled = true;
         } else {
           enabled = !anyNonExploreUsed && !isActionUsedToday(STATE.currentRoomId, i);
         }
@@ -567,8 +576,9 @@ export function handleAction(idx) {
       effectMsgs.push(...runEffectsCollectMessages(action.effects || []));
     }
 
-    // Sala armadilha: após qualquer 'act', todas as 'act' contam como usadas
-    if (isTrapRoom(STATE.currentRoomId) && role === 'act') {
+    // Sala armadilha e salas de escolha única: após qualquer 'act', todas as 'act' contam como usadas.
+    // [TODO] Sala armadilha será refinada depois com dano por Vida/Energia/Sanidade escalado por andar.
+    if ((isTrapRoom(STATE.currentRoomId) || room.singleChoiceActs) && role === 'act') {
       for (let j = 0; j < 4; j++) {
         const aj = room.actions?.[j];
         const rj = aj ? (aj.role || 'act') : 'act';

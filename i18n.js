@@ -48,7 +48,7 @@ export const LOCALES = {
     // --- Ações ---
     'action.descansar': 'Descansar',
     'action.meditar': 'Meditar',
-    'action.treinar': 'Treinar',
+    'action.tratar_feridas': 'Tratar feridas',
     'action.explorar': 'Explorar',
     'action.beber_agua': 'Beber água',
     'action.lavar_rosto': 'Lavar o Rosto',

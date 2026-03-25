@@ -31,7 +31,7 @@
    
       <!-- =====================[ TRECHO 4: HEADER + XP (3 COLUNAS) ]===================== -->
       <header class="toprow" aria-label="Topo do jogo">
-        <div class="level" aria-label="Nível atual">Level <strong>99</strong></div>
+        <div class="level" aria-label="Nível atual">Level <strong>99</strong><span class="level-points-badge" aria-hidden="true" hidden>+0</span></div>
 
         <div class="xp-stack" aria-label="Experiência">
           <div class="xp-label" aria-hidden="true">0/100</div>
@@ -181,7 +181,83 @@
         </div>
         <button type="button" class="modal-close modal-close-round" data-i18n-aria="ui.close" aria-label="Fechar">✕</button>
       </div>
-      <!-- =====================[ FIM TRECHO 9B ]===================== -->
+
+      <!-- =====================[ TRECHO 9C: MODAL — DISTRIBUIR ATRIBUTOS ]===================== -->
+      <div class="modal-overlay" id="attr-modal" aria-hidden="true" hidden>
+        <div class="modal-dialog modal-dialog--attr" role="dialog" aria-modal="true" aria-label="Distribuir atributos">
+          <div class="attr-modal__header">
+            <div>
+              <div class="attr-modal__title">Distribuir atributos</div>
+              <div class="attr-modal__note">Subir de nível não recupera status. Aqui você só gasta os pontos livres.</div>
+            </div>
+            <div class="attr-modal__points">Pontos livres: <strong id="attr-modal-points">0</strong></div>
+          </div>
+
+          <div class="modal-body attr-modal__body" id="attr-modal-body" tabindex="0" aria-label="Distribuição de atributos">
+            <div class="attr-row" data-attr="ataque">
+              <div class="attr-row__meta">
+                <span class="attr-row__icon" aria-hidden="true">⚔️</span>
+                <span class="attr-row__meta-text">
+                  <span class="attr-row__label">Ataque</span>
+                  <span class="attr-row__desc" data-role="desc">Aumenta o dano base causado nos golpes.</span>
+                </span>
+              </div>
+              <div class="attr-row__value" data-role="value">0</div>
+              <div class="attr-row__cost" data-role="cost">Custo: 1</div>
+              <button type="button" class="attr-step attr-step--minus" data-action="minus" data-attr="ataque" aria-label="Diminuir Ataque">−</button>
+              <button type="button" class="attr-step attr-step--plus" data-action="plus" data-attr="ataque" aria-label="Aumentar Ataque">+</button>
+            </div>
+
+            <div class="attr-row" data-attr="defesa">
+              <div class="attr-row__meta">
+                <span class="attr-row__icon" aria-hidden="true">🛡️</span>
+                <span class="attr-row__meta-text">
+                  <span class="attr-row__label">Defesa</span>
+                  <span class="attr-row__desc" data-role="desc">Reduz parte do dano recebido em combate.</span>
+                </span>
+              </div>
+              <div class="attr-row__value" data-role="value">0</div>
+              <div class="attr-row__cost" data-role="cost">Custo: 1</div>
+              <button type="button" class="attr-step attr-step--minus" data-action="minus" data-attr="defesa" aria-label="Diminuir Defesa">−</button>
+              <button type="button" class="attr-step attr-step--plus" data-action="plus" data-attr="defesa" aria-label="Aumentar Defesa">+</button>
+            </div>
+
+            <div class="attr-row" data-attr="precisao">
+              <div class="attr-row__meta">
+                <span class="attr-row__icon" aria-hidden="true">🎯</span>
+                <span class="attr-row__meta-text">
+                  <span class="attr-row__label">Precisão</span>
+                  <span class="attr-row__desc" data-role="desc">Ajuda a acertar ataques e reduz falhas.</span>
+                </span>
+              </div>
+              <div class="attr-row__value" data-role="value">0</div>
+              <div class="attr-row__cost" data-role="cost">Custo: 1</div>
+              <button type="button" class="attr-step attr-step--minus" data-action="minus" data-attr="precisao" aria-label="Diminuir Precisão">−</button>
+              <button type="button" class="attr-step attr-step--plus" data-action="plus" data-attr="precisao" aria-label="Aumentar Precisão">+</button>
+            </div>
+
+            <div class="attr-row" data-attr="agilidade">
+              <div class="attr-row__meta">
+                <span class="attr-row__icon" aria-hidden="true">💨</span>
+                <span class="attr-row__meta-text">
+                  <span class="attr-row__label">Agilidade</span>
+                  <span class="attr-row__desc" data-role="desc">Ajuda na evasão e em ações ligadas à velocidade.</span>
+                </span>
+              </div>
+              <div class="attr-row__value" data-role="value">0</div>
+              <div class="attr-row__cost" data-role="cost">Custo: 1</div>
+              <button type="button" class="attr-step attr-step--minus" data-action="minus" data-attr="agilidade" aria-label="Diminuir Agilidade">−</button>
+              <button type="button" class="attr-step attr-step--plus" data-action="plus" data-attr="agilidade" aria-label="Aumentar Agilidade">+</button>
+            </div>
+          </div>
+
+          <div class="attr-modal__footer">
+            <button type="button" class="attr-modal__btn attr-modal__btn--ghost" id="attr-modal-cancel">Cancelar</button>
+            <button type="button" class="attr-modal__btn attr-modal__btn--primary" id="attr-modal-apply">Aplicar</button>
+          </div>
+        </div>
+      </div>
+      <!-- =====================[ FIM TRECHO 9C ]===================== -->
 
 
       <!-- =====================[ TRECHO 11: index.html - scripts em módulos ]===================== -->

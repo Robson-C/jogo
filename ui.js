@@ -9,7 +9,7 @@
  *  - setRoomDesc() e setRoomBackground() para descrição e fundo de sala.
  * Não possui estado próprio do jogo (STATE fica em state.js).
  */
-import { getEffectivePlayerSnapshot, getLogLastN } from './state.js'; // [DOC]
+import { getDay, getEffectivePlayerSnapshot, getLogLastN, getLogLastNTexts, getPlayerSnapshot, getAttributeUpgradeCost, PlayerAPI, appendLog } from './state.js'; // [DOC]
 
 let els = {
   roomTitle: null,
@@ -35,6 +35,29 @@ let _modal = {
   body: null,
   closeBtn: null,
   prevFocus: null
+};
+
+
+const ATTR_KEYS = ['ataque', 'defesa', 'precisao', 'agilidade'];
+const ATTR_LABELS = { ataque: 'Ataque', defesa: 'Defesa', precisao: 'Precisão', agilidade: 'Agilidade' };
+const ATTR_DESCRIPTIONS = {
+  ataque: 'Aumenta o dano base causado nos golpes.',
+  defesa: 'Reduz parte do dano recebido em combate.',
+  precisao: 'Ajuda a acertar ataques e reduz falhas.',
+  agilidade: 'Ajuda na evasão e em ações ligadas à velocidade.'
+};
+
+let _attrModal = {
+  bound: false,
+  overlay: null,
+  dialog: null,
+  body: null,
+  points: null,
+  cancelBtn: null,
+  applyBtn: null,
+  prevFocus: null,
+  base: null,
+  draft: null
 };
 
 /* ---------------------- [STATE-UI] Log compacto: auto-fit 4→3→2→1 ---------------------- */
@@ -66,6 +89,7 @@ export function initUI() {
 
   // Modal de histórico
   _bindLogModalHandlers();
+  _bindAttrModalHandlers();
 
   // Re-ajuste responsivo do log compacto
   window.addEventListener('resize', () => {
@@ -278,8 +302,9 @@ export function renderHUD() {
   _setChipValue('.stat-chip--def', snap.defesa);
   _setChipValue('.stat-chip--acc', snap.precisao);
   _setChipValue('.stat-chip--agi', snap.agilidade);
-  _updateLevel(snap.level);
+  _updateLevel(snap.level, snap.pontosAtributoLivres);
   _updateXP(snap.xpProgress, snap.xpNeeded, !!snap.atMaxLevel);
+  _updateAttributeUpgradeAvailability(snap.pontosAtributoLivres);
 }
 
 function _updateStatBar(statKey, cur, max) {
@@ -310,10 +335,40 @@ function _setChipValue(selector, value) {
   const n = Math.floor(Number(value) || 0);
   el.textContent = String(n);
 }
-function _updateLevel(level) {
-  const strong = document.querySelector('.toprow .level strong');
+function _updateLevel(level, freePoints = 0) {
+  const levelEl = document.querySelector('.toprow .level');
+  const strong = levelEl ? levelEl.querySelector('strong') : null;
+  const badge = levelEl ? levelEl.querySelector('.level-points-badge') : null;
   const n = Math.max(1, Math.floor(Number(level) || 1));
+  const safeFree = Math.max(0, Math.floor(Number(freePoints) || 0));
   if (strong) strong.textContent = String(n);
+  if (levelEl) levelEl.setAttribute('data-has-points', safeFree > 0 ? 'true' : 'false');
+  if (badge) {
+    if (safeFree > 0) {
+      badge.hidden = false;
+      badge.textContent = `+${safeFree}`;
+      badge.setAttribute('aria-label', `${safeFree} pontos de atributo livres`);
+    } else {
+      badge.hidden = true;
+      badge.textContent = '+0';
+      badge.setAttribute('aria-label', 'Nenhum ponto de atributo livre');
+    }
+  }
+}
+function _updateAttributeUpgradeAvailability(freePoints) {
+  const safeFree = Math.max(0, Math.floor(Number(freePoints) || 0));
+  const chips = document.querySelectorAll('.secstats .stat-chip');
+  const chipKeys = ['ataque', 'defesa', 'precisao', 'agilidade'];
+  for (let i = 0; i < chips.length; i++) {
+    const chip = chips[i];
+    const key = chipKeys[i] || '';
+    const label = ATTR_LABELS[key] || 'Atributo';
+    const desc = ATTR_DESCRIPTIONS[key] || '';
+    chip.disabled = !(safeFree > 0);
+    chip.setAttribute('data-can-upgrade', safeFree > 0 ? 'true' : 'false');
+    chip.setAttribute('title', safeFree > 0 ? `${label}: ${desc} Toque para distribuir pontos.` : `${label}: ${desc}`);
+    chip.setAttribute('aria-label', safeFree > 0 ? `${label}. ${desc} Você tem ${safeFree} pontos de atributo livres.` : `${label}. ${desc}`);
+  }
 }
 function _updateXP(progress, needed, atMax) {
   const label = document.querySelector('.xp-stack .xp-label');
@@ -504,3 +559,236 @@ function _bindLogModalHandlers() {
   _modal.bound = true;
 }
 /* =====================[ FIM TRECHO 3 ]===================== */
+
+
+/* =====================[ TRECHO 4: ui.js - Modal de Atributos ]===================== */
+function _ensureAttrModalEls() {
+  if (!_attrModal.overlay)   _attrModal.overlay   = document.getElementById('attr-modal');
+  if (!_attrModal.dialog)    _attrModal.dialog    = _attrModal.overlay ? _attrModal.overlay.querySelector('.modal-dialog--attr') : null;
+  if (!_attrModal.body)      _attrModal.body      = _attrModal.overlay ? _attrModal.overlay.querySelector('#attr-modal-body') : null;
+  if (!_attrModal.points)    _attrModal.points    = _attrModal.overlay ? _attrModal.overlay.querySelector('#attr-modal-points') : null;
+  if (!_attrModal.cancelBtn) _attrModal.cancelBtn = _attrModal.overlay ? _attrModal.overlay.querySelector('#attr-modal-cancel') : null;
+  if (!_attrModal.applyBtn)  _attrModal.applyBtn  = _attrModal.overlay ? _attrModal.overlay.querySelector('#attr-modal-apply') : null;
+}
+
+function _resetAttrDraft() {
+  const base = getPlayerSnapshot();
+  _attrModal.base = {
+    ataque: Math.max(0, Math.floor(Number(base.ataque) || 0)),
+    defesa: Math.max(0, Math.floor(Number(base.defesa) || 0)),
+    precisao: Math.max(0, Math.floor(Number(base.precisao) || 0)),
+    agilidade: Math.max(0, Math.floor(Number(base.agilidade) || 0))
+  };
+  _attrModal.draft = { ataque: 0, defesa: 0, precisao: 0, agilidade: 0 };
+}
+
+function _getDraftAttrValue(key) {
+  if (!_attrModal.base || !_attrModal.draft || !ATTR_KEYS.includes(key)) return 0;
+  return Math.max(0, Math.min(99, _attrModal.base[key] + _attrModal.draft[key]));
+}
+
+function _getDraftSpentCost() {
+  if (!_attrModal.base || !_attrModal.draft) return 0;
+  let total = 0;
+  for (let i = 0; i < ATTR_KEYS.length; i++) {
+    const key = ATTR_KEYS[i];
+    let cur = _attrModal.base[key];
+    const inc = Math.max(0, Math.floor(Number(_attrModal.draft[key]) || 0));
+    for (let step = 0; step < inc; step++) {
+      total += getAttributeUpgradeCost(cur);
+      cur++;
+    }
+  }
+  return total;
+}
+
+function _getRemainingDraftPoints() {
+  const snap = getEffectivePlayerSnapshot();
+  const free = Math.max(0, Math.floor(Number(snap.pontosAtributoLivres) || 0));
+  return Math.max(0, free - _getDraftSpentCost());
+}
+
+function _getNextDraftStepCost(key) {
+  if (!_attrModal.base || !_attrModal.draft || !ATTR_KEYS.includes(key)) return 0;
+  const cur = _getDraftAttrValue(key);
+  if (cur >= 99) return 0;
+  return getAttributeUpgradeCost(cur);
+}
+
+function _canIncreaseDraft(key) {
+  if (!_attrModal.base || !_attrModal.draft || !ATTR_KEYS.includes(key)) return false;
+  const nextCost = _getNextDraftStepCost(key);
+  if (nextCost <= 0) return false;
+  if (_getDraftAttrValue(key) >= 99) return false;
+  return _getRemainingDraftPoints() >= nextCost;
+}
+
+function _renderAttrModal() {
+  _ensureAttrModalEls();
+  if (!_attrModal.overlay || !_attrModal.body) return;
+  const pointsLeft = _getRemainingDraftPoints();
+  if (_attrModal.points) _attrModal.points.textContent = String(pointsLeft);
+
+  const rows = _attrModal.body.querySelectorAll('.attr-row');
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const key = String(row.getAttribute('data-attr') || '');
+    if (!ATTR_KEYS.includes(key)) continue;
+    const base = _attrModal.base ? _attrModal.base[key] : 0;
+    const draft = _attrModal.draft ? Math.max(0, Math.floor(Number(_attrModal.draft[key]) || 0)) : 0;
+    const valueEl = row.querySelector('[data-role="value"]');
+    const costEl = row.querySelector('[data-role="cost"]');
+    const descEl = row.querySelector('[data-role="desc"]');
+    const minusBtn = row.querySelector('[data-action="minus"]');
+    const plusBtn = row.querySelector('[data-action="plus"]');
+    const nextCost = _getNextDraftStepCost(key);
+    const currentPreview = _getDraftAttrValue(key);
+
+    if (valueEl) {
+      valueEl.textContent = draft > 0 ? `${base} → ${currentPreview}` : String(base);
+    }
+    if (descEl) {
+      descEl.textContent = ATTR_DESCRIPTIONS[key] || '';
+    }
+    if (costEl) {
+      costEl.textContent = nextCost > 0 ? `Custo: ${nextCost}` : 'MAX';
+    }
+    if (minusBtn) minusBtn.disabled = draft <= 0;
+    if (plusBtn) plusBtn.disabled = !_canIncreaseDraft(key);
+  }
+
+  const spent = _getDraftSpentCost();
+  if (_attrModal.applyBtn) _attrModal.applyBtn.disabled = !(spent > 0);
+}
+
+function _openAttrModal() {
+  const snap = getEffectivePlayerSnapshot();
+  const free = Math.max(0, Math.floor(Number(snap.pontosAtributoLivres) || 0));
+  if (free <= 0) return;
+
+  _ensureAttrModalEls();
+  if (!_attrModal.overlay) return;
+
+  try { _attrModal.overlay.removeAttribute('inert'); } catch (_) {}
+  _resetAttrDraft();
+  _renderAttrModal();
+
+  _attrModal.prevFocus = document.activeElement || null;
+  document.body.classList.add('no-scroll');
+  _attrModal.overlay.removeAttribute('hidden');
+  _attrModal.overlay.setAttribute('aria-hidden', 'false');
+
+  try { if (_attrModal.body) _attrModal.body.focus(); } catch (_) {}
+  document.addEventListener('keydown', _onEscCloseAttr, { passive: true });
+}
+
+function _closeAttrModal() {
+  _ensureAttrModalEls();
+  if (!_attrModal.overlay) return;
+
+  try {
+    const active = document.activeElement;
+    if (active && _attrModal.overlay.contains(active)) {
+      try { active.blur(); } catch (_) {}
+      let restored = false;
+      if (_attrModal.prevFocus && typeof _attrModal.prevFocus.focus === 'function') {
+        try {
+          if (!_attrModal.overlay.contains(_attrModal.prevFocus)) {
+            _attrModal.prevFocus.focus();
+            restored = true;
+          }
+        } catch (_) {}
+      }
+      if (!restored) {
+        try { document.body.setAttribute('tabindex', '-1'); document.body.focus(); } catch (_) {}
+        try { document.body.removeAttribute('tabindex'); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+
+  try { _attrModal.overlay.setAttribute('inert', ''); } catch (_) {}
+
+  requestAnimationFrame(() => {
+    try {
+      _attrModal.overlay.setAttribute('aria-hidden', 'true');
+      _attrModal.overlay.setAttribute('hidden', '');
+    } catch (_) {}
+    document.body.classList.remove('no-scroll');
+    _attrModal.prevFocus = null;
+    document.removeEventListener('keydown', _onEscCloseAttr);
+  });
+}
+
+function _stepAttrDraft(key, dir) {
+  if (!ATTR_KEYS.includes(key) || !_attrModal.draft) return;
+  if (dir > 0) {
+    if (_canIncreaseDraft(key)) _attrModal.draft[key] += 1;
+  } else if (dir < 0) {
+    if (_attrModal.draft[key] > 0) _attrModal.draft[key] -= 1;
+  }
+  _renderAttrModal();
+}
+
+function _applyAttrDraft() {
+  if (!_attrModal.draft) return;
+  const plan = {
+    ataque: Math.max(0, Math.floor(Number(_attrModal.draft.ataque) || 0)),
+    defesa: Math.max(0, Math.floor(Number(_attrModal.draft.defesa) || 0)),
+    precisao: Math.max(0, Math.floor(Number(_attrModal.draft.precisao) || 0)),
+    agilidade: Math.max(0, Math.floor(Number(_attrModal.draft.agilidade) || 0))
+  };
+  const res = PlayerAPI.applyAttributeAllocation(plan);
+  if (!res || !res.ok) return;
+
+  const parts = [];
+  for (let i = 0; i < ATTR_KEYS.length; i++) {
+    const key = ATTR_KEYS[i];
+    const amount = res.applied && Number(res.applied[key]) ? Math.floor(Number(res.applied[key])) : 0;
+    if (amount > 0) parts.push(`${ATTR_LABELS[key]} +${amount}`);
+  }
+  const msg = parts.length ? `Você distribuiu atributos: ${parts.join(', ')}.` : 'Você distribuiu atributos.';
+  appendLog({ sev: 'mod', msg, ctx: { day: getDay() } });
+  renderHUD();
+  renderLog(getLogLastNTexts(4));
+  _closeAttrModal();
+}
+
+function _onEscCloseAttr(e) {
+  if (e && (e.key === 'Escape' || e.key === 'Esc')) _closeAttrModal();
+}
+
+function _bindAttrModalHandlers() {
+  if (_attrModal.bound) return;
+  _ensureAttrModalEls();
+
+  const chips = document.querySelectorAll('.secstats .stat-chip');
+  for (let i = 0; i < chips.length; i++) {
+    chips[i].addEventListener('click', () => _openAttrModal(), { passive: true });
+  }
+
+  if (_attrModal.body) {
+    _attrModal.body.addEventListener('click', (ev) => {
+      const btn = ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('.attr-step') : null;
+      if (!btn) return;
+      const key = String(btn.getAttribute('data-attr') || '');
+      const action = String(btn.getAttribute('data-action') || '');
+      if (action === 'plus') _stepAttrDraft(key, +1);
+      if (action === 'minus') _stepAttrDraft(key, -1);
+    });
+  }
+
+  if (_attrModal.cancelBtn) {
+    _attrModal.cancelBtn.addEventListener('click', () => _closeAttrModal(), { passive: true });
+  }
+  if (_attrModal.applyBtn) {
+    _attrModal.applyBtn.addEventListener('click', () => _applyAttrDraft(), { passive: true });
+  }
+  if (_attrModal.overlay) {
+    _attrModal.overlay.addEventListener('click', (ev) => {
+      if (ev.target === _attrModal.overlay) _closeAttrModal();
+    }, { passive: true });
+  }
+
+  _attrModal.bound = true;
+}
+/* =====================[ FIM TRECHO 4 ]===================== */

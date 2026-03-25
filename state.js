@@ -9,13 +9,15 @@
  * [CHANGE]
  * - STORAGE_KEYS dinâmico por slot (saveSlot${STATE.slot}.*).
  * - Log estruturado {ts, sev, msg, ctx?} + util getLogLastNTexts(n) para UI.
- * - [CHANGE] Sistema de XP/Nível:
- *   - player.level adicionado (inicia em 1).
- *   - Requisito por nível: ceil(100 * 1.2^(level-1)).
- *   - Cap = 50; barra cheia no cap; XP total continua acumulando (sem efeito prático).
+ * - [CHANGE] Sistema de XP/Nível/Atributos:
+ *   - player.level inicia em 1 e vai até 99.
+ *   - XP por nível usa curva quadrática leve própria para cap 99.
+ *   - XP continua sendo total acumulado.
+ *   - Cada nível ganho concede +3 pontos de atributo livres (ocultos por enquanto).
+ *   - Backend expõe custo escalonado por atributo para a futura tela de distribuição.
  * - [NEW] Flag volátil de sessão `bootInitLogged` para evitar relogar as mensagens iniciais.
  */
-export const VERSION = '0.8.0-scene-encounter-split';
+export const VERSION = '0.8.1-player-progression';
 
 export const STATE = {
   version: VERSION,
@@ -58,8 +60,10 @@ export const STATE = {
     precisao: 0,
     agilidade: 0,
     // Progressão
-    level: 1, // [CHANGE] novo campo — nível atual (1..50)
-    xp: 0     // total acumulado; no cap continua subindo sem efeito prático
+    level: 1,                 // nível atual (1..99)
+    xp: 0,                    // total acumulado
+    pontosAtributoLivres: 0,  // +3 por nível acima do 1; oculto na UI por enquanto
+    pontosAtributoGastos: 0   // reservado para a futura tela de distribuição
   },
 
   // [STATE] Modificadores ativos (não alteram base; aplicados na leitura efetiva)
@@ -180,9 +184,101 @@ const STATUS_KEYS = ['vida', 'energia', 'mana', 'sanidade'];
 const STATUS_MAX_KEYS = ['maxVida', 'maxEnergia', 'maxMana', 'maxSanidade'];
 const ATRIB_KEYS  = ['ataque', 'defesa', 'precisao', 'agilidade'];
 const XP_KEY = 'xp';
+const ATTR_FREE_KEY = 'pontosAtributoLivres';
+const ATTR_SPENT_KEY = 'pontosAtributoGastos';
 
 const LEVEL_MIN = 1;
-const LEVEL_MAX = 50;
+const LEVEL_MAX = 99;
+const ATTRIBUTE_POINTS_PER_LEVEL = 3;
+const ATTRIBUTE_MAX = 99;
+const FLOOR_MIN = 1;
+const FLOOR_MAX = 50;
+
+/**
+ * [DOC][XP DE COMBATE]
+ * Regras atuais de XP real em combate:
+ * - base por andar: (14 + floor * 3)
+ * - multiplicador por tipo: normal=1.0 / boss=4.0
+ * - multiplicador por poder real do inimigo: derivado dos próprios status
+ * - redutor por overlevel do jogador em relação ao andar esperado
+ *
+ * [TODO][REVISÃO FUTURA]
+ * - Quando existir sistema real de progressão de andares/capítulos na run, alimentar estas
+ *   funções com o andar atual da run, e não apenas com `encounterFloor` da sala.
+ * - Quando existirem elites/outros tipos, revisar o multiplicador por tipo.
+ * - Quando precisão/agilidade entrarem no acerto/esquiva reais, reavaliar a fórmula de poder.
+ */
+function clampFloorNumber(rawFloor) {
+  const floor = Math.floor(Number(rawFloor) || FLOOR_MIN);
+  if (floor < FLOOR_MIN) return FLOOR_MIN;
+  if (floor > FLOOR_MAX) return FLOOR_MAX;
+  return floor;
+}
+
+/** [DOC] Nível esperado para o andar da run. Conteúdo principal fecha perto de lv 75–80. */
+export function getExpectedLevelForFloor(rawFloor) {
+  const floor = clampFloorNumber(rawFloor);
+  return Math.min(80, Math.round(1 + ((floor - 1) * 1.6)));
+}
+
+/** [DOC] Poder implícito do inimigo, usado apenas para calibrar recompensa de XP. */
+export function getEnemyPower(enemy) {
+  if (!enemy || typeof enemy !== 'object') return 0;
+  const maxVida = Math.max(1, Math.floor(Number(enemy.maxVida ?? enemy.vida) || 1));
+  const ataque = Math.max(0, Math.floor(Number(enemy.ataque ?? enemy.forca) || 0));
+  const defesa = Math.max(0, Math.floor(Number(enemy.defesa) || 0));
+  const precisao = Math.max(0, Math.floor(Number(enemy.precisao) || 0));
+  const agilidade = Math.max(0, Math.floor(Number(enemy.agilidade) || 0));
+
+  let power =
+    (maxVida * 0.45) +
+    (ataque * 1.4) +
+    (defesa * 1.0) +
+    (precisao * 0.6) +
+    (agilidade * 0.6);
+
+  if (String(enemy.tipo || '') === 'boss') power *= 1.25;
+  return Math.max(1, power);
+}
+
+function getFloorReferencePower(rawFloor) {
+  const floor = clampFloorNumber(rawFloor);
+  return 28 + (floor * 1.9);
+}
+
+function clampNumber(min, max, value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return min;
+  if (n < min) return min;
+  if (n > max) return max;
+  return n;
+}
+
+/** [DOC] Redutor de farm: compara nível do jogador com a faixa esperada do andar. */
+export function getOverlevelMultiplier(playerLevel, rawFloor) {
+  const level = Math.max(LEVEL_MIN, Math.floor(Number(playerLevel) || LEVEL_MIN));
+  const expected = getExpectedLevelForFloor(rawFloor);
+  const diff = level - expected;
+
+  if (diff >= 16) return 0.15;
+  if (diff >= 8) return 0.40;
+  if (diff >= 3) return 0.70;
+  if (diff <= -5) return 1.15;
+  return 1.0;
+}
+
+/** [DOC] XP de combate por inimigo: andar + tipo + poder real + overlevel do jogador. */
+export function getCombatXPReward(enemy, rawFloor, playerLevel = LEVEL_MIN) {
+  const floor = clampFloorNumber(rawFloor);
+  const level = Math.max(LEVEL_MIN, Math.floor(Number(playerLevel) || LEVEL_MIN));
+  const baseXP = 14 + (floor * 3);
+  const typeMult = String(enemy?.tipo || '') === 'boss' ? 4.0 : 1.0;
+  const enemyPower = getEnemyPower(enemy);
+  const statMult = clampNumber(0.85, 1.25, enemyPower / getFloorReferencePower(floor));
+  const overlevelMult = getOverlevelMultiplier(level, floor);
+
+  return Math.max(1, Math.round(baseXP * typeMult * statMult * overlevelMult));
+}
 
 function isFiniteNumber(n) {
   return typeof n === 'number' && isFinite(n);
@@ -211,11 +307,11 @@ function storageKeys(slot = STATE.slot) {
   };
 }
 
-/* ---------------------- XP/Nível (Opção A) ---------------------- */
-/** [DOC] Requisito para subir do nível `lv` para `lv+1`: ceil(100 * 1.2^(lv-1)) */
+/* ---------------------- XP/Nível/Atributos ---------------------- */
+/** [DOC] Requisito para subir do nível `lv` para `lv+1`: round(45 + lv*9 + lv^2*0.4) */
 export function xpNeededFor(lv) {
   const level = Math.max(LEVEL_MIN, Math.min(LEVEL_MAX, Math.floor(Number(lv) || LEVEL_MIN)));
-  return Math.ceil(100 * Math.pow(1.2, level - 1));
+  return Math.max(1, Math.round(45 + (level * 9) + (level * level * 0.4)));
 }
 /** [DOC] XP acumulado para estar no início de `lv` (soma de requisitos 1→2 ... (lv-1)→lv). */
 function totalXPForLevelStart(lv) {
@@ -224,10 +320,30 @@ function totalXPForLevelStart(lv) {
   for (let i = LEVEL_MIN; i < level; i++) sum += xpNeededFor(i);
   return sum;
 }
+/** [DOC] Total de pontos de atributo ganhos até `lv` (nível 1 = 0). */
+export function getEarnedAttributePointsForLevel(lv) {
+  const level = Math.max(LEVEL_MIN, Math.min(LEVEL_MAX, Math.floor(Number(lv) || LEVEL_MIN)));
+  return Math.max(0, (level - LEVEL_MIN) * ATTRIBUTE_POINTS_PER_LEVEL);
+}
+/** [DOC] Custo para subir +1 no atributo, conforme o valor base atual dele. */
+export function getAttributeUpgradeCost(currentValue) {
+  const value = Math.max(0, Math.floor(Number(currentValue) || 0));
+  if (value >= 80) return 5;
+  if (value >= 60) return 4;
+  if (value >= 40) return 3;
+  if (value >= 20) return 2;
+  return 1;
+}
+/** [DOC] Custo atual para evoluir o atributo BASE informado. */
+export function getAtributoUpgradeCost(key) {
+  if (!ATRIB_KEYS.includes(key)) return 0;
+  return getAttributeUpgradeCost(STATE.player[key]);
+}
 /** [DOC] Recalcula e aplica o nível correto com base em STATE.player.xp (suporta ganho/perda). */
 function recalcLevelFromTotalXP() {
   let total = STATE.player.xp;
   if (!isFiniteNumber(total) || total < 0) total = 0;
+
   let lv = LEVEL_MIN;
   while (lv < LEVEL_MAX) {
     const base = totalXPForLevelStart(lv);
@@ -235,8 +351,15 @@ function recalcLevelFromTotalXP() {
     if (total >= base + need) lv++;
     else break;
   }
+
+  const earnedPoints = getEarnedAttributePointsForLevel(lv);
+  const spentPoints = Math.max(0, Math.floor(Number(STATE.player[ATTR_SPENT_KEY]) || 0));
+  const freePoints = Math.max(0, earnedPoints - spentPoints);
+
   STATE.player.level = lv;
-  STATE.player.xp = total; // mantém total acumulado monotônico (pode ser reduzido se setXP assim definir)
+  STATE.player.xp = total;
+  STATE.player[ATTR_SPENT_KEY] = spentPoints;
+  STATE.player[ATTR_FREE_KEY] = freePoints;
 }
 /** [DOC] Snapshot do progresso dentro do nível atual. */
 export function getXPProgress() {
@@ -251,6 +374,9 @@ export function getXPProgress() {
 export function getLevel() { return Math.max(LEVEL_MIN, Math.min(LEVEL_MAX, Math.floor(STATE.player.level || LEVEL_MIN))); }
 export function isMaxLevel() { return getLevel() >= LEVEL_MAX; }
 export function getXPForNextLevel() { return xpNeededFor(getLevel()); }
+export function getFreeAttributePoints() {
+  return Math.max(0, Math.floor(Number(STATE.player[ATTR_FREE_KEY]) || 0));
+}
 /* =====================[ FIM TRECHO 4 ]===================== */
 
 /* =====================[ TRECHO 5: API — Base (sem modificadores) ]===================== */
@@ -266,7 +392,11 @@ export function setPlayerValue(key, value) {
     clampStatusBase(key);
     return true;
   }
-  if (ATRIB_KEYS.includes(key) || key === XP_KEY) {
+  if (ATRIB_KEYS.includes(key)) {
+    STATE.player[key] = Math.max(0, Math.min(ATTRIBUTE_MAX, Math.floor(Number(value) || 0)));
+    return true;
+  }
+  if (key === XP_KEY || key === ATTR_FREE_KEY || key === ATTR_SPENT_KEY) {
     STATE.player[key] = value;
     return true;
   }
@@ -281,7 +411,12 @@ export function addPlayerValue(key, delta) {
     clampStatusBase(key);
     return true;
   }
-  if (ATRIB_KEYS.includes(key) || key === XP_KEY) {
+  if (ATRIB_KEYS.includes(key)) {
+    const cur = isFiniteNumber(STATE.player[key]) ? STATE.player[key] : 0;
+    STATE.player[key] = Math.max(0, Math.min(ATTRIBUTE_MAX, cur + delta));
+    return true;
+  }
+  if (key === XP_KEY || key === ATTR_FREE_KEY || key === ATTR_SPENT_KEY) {
     const cur = isFiniteNumber(STATE.player[key]) ? STATE.player[key] : 0;
     STATE.player[key] = cur + delta;
     return true;
@@ -315,8 +450,8 @@ export const PlayerAPI = {
   // Atributos base
   setAtributo: (k, v) => ATRIB_KEYS.includes(k) && setPlayerValue(k, v),
   addAtributo: (k, d) => ATRIB_KEYS.includes(k) && addPlayerValue(k, d),
-  // XP/Level (opção A)
-  /** [DOC] Define XP total (clamp ≥0), recalcula nível; respeita cap 50. */
+  // XP/Level/Atributos
+  /** [DOC] Define XP total (clamp ≥0), recalcula nível; respeita cap 99. */
   setXP: (v) => {
     const val = Math.max(0, Math.floor(Number(v) || 0));
     STATE.player.xp = val;
@@ -324,13 +459,27 @@ export const PlayerAPI = {
     return true;
   },
   /** [DOC] Soma ao XP total (pode ser negativo); recalcula nível.
-   *  [WHY] Carrega sobra e suporta múltiplos ups. No cap (50), XP segue acumulando sem efeito prático. */
+   *  [WHY] Carrega sobra e suporta múltiplos ups. No cap (99), XP segue acumulando sem efeito prático. */
   addXP: (d) => {
     const delta = Math.floor(Number(d) || 0);
     let total = Math.max(0, Math.floor(Number(STATE.player.xp) || 0)) + delta;
     if (total < 0) total = 0;
     STATE.player.xp = total;
     recalcLevelFromTotalXP();
+    return true;
+  },
+  getPontosAtributoLivres: () => getFreeAttributePoints(),
+  getCustoAtributo: (k) => getAtributoUpgradeCost(k),
+  trySpendAttributePointsOn: (k) => {
+    if (!ATRIB_KEYS.includes(k)) return false;
+    const cost = getAtributoUpgradeCost(k);
+    const free = getFreeAttributePoints();
+    if (cost <= 0 || free < cost) return false;
+    const curAttr = Math.max(0, Math.floor(Number(STATE.player[k]) || 0));
+    if (curAttr >= ATTRIBUTE_MAX) return false;
+    STATE.player[k] = Math.min(ATTRIBUTE_MAX, curAttr + 1);
+    STATE.player[ATTR_FREE_KEY] = free - cost;
+    STATE.player[ATTR_SPENT_KEY] = Math.max(0, Math.floor(Number(STATE.player[ATTR_SPENT_KEY]) || 0)) + cost;
     return true;
   }
 };
@@ -408,7 +557,7 @@ export function listModifiers(filter = {}) {
  * - Para status: valorEfetivo = clamp( base + soma(mods 'status' para key), 0, maxEfetivo )
  *   onde maxEfetivo = maxBase + soma(mods 'statusMax' para key)
  * - Para atributos: valorEfetivo = base + soma(mods 'atributo' para key)
- * - XP: sem mods neste esqueleto (mas expõe nível e progresso do nível para UI).
+ * - XP/Pontos de atributo: sem mods neste esqueleto (mas expõe nível, progresso e pontos livres para UI).
  */
 function sumMods(kind, key) {
   let s = 0;
@@ -466,7 +615,8 @@ export function getEffectivePlayerSnapshot() {
     xp:          Math.max(0, Math.floor(Number(STATE.player.xp) || 0)), // total acumulado
     xpProgress:  xpView.progress,   // progresso dentro do nível
     xpNeeded:    xpView.needed,     // requisito do nível atual
-    atMaxLevel:  xpView.atMaxLevel
+    atMaxLevel:  xpView.atMaxLevel,
+    pontosAtributoLivres: getFreeAttributePoints()
   };
 }
 /* =====================[ FIM TRECHO 7 ]===================== */
@@ -509,7 +659,7 @@ export function addDay(delta) {
  * - Define valores iniciais de runtime (sem persistência) para o jogador:
  *   Status (Vida/Mana/Energia/Sanidade): max = 100; atual = max.
  *   Atributos (ATK/DEF/ACC/AGI): 5.
- *   Progressão: level=1; xp=0.
+ *   Progressão: level=1; xp=0; pontosAtributoLivres=0; pontosAtributoGastos=0.
  * [WHY] Garante HUD coerente desde o boot e permite ver o consumo de Energia ao explorar.
  */
 export function initPlayerDefaults() {
@@ -529,7 +679,9 @@ export function initPlayerDefaults() {
   STATE.player.precisao = 5;
   STATE.player.agilidade = 5;
   // Progressão
-  STATE.player.level = 1; // [CHANGE] novo
-  STATE.player.xp = 0;    // total acumulado
+  STATE.player.level = 1;
+  STATE.player.xp = 0;
+  STATE.player.pontosAtributoLivres = 0;
+  STATE.player.pontosAtributoGastos = 0;
 }
 /* =====================[ FIM TRECHO 9 ]===================== */

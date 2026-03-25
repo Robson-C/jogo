@@ -2,8 +2,12 @@
 /**
  * [DOC]
  * Salas com efeitos declarativos por ação.
- * - sala_vazia: já com efeitos (energia/sanidade/xp).
- * - sala_fonte: **ATUALIZADO** (mana/energia/sanidade).
+ * - sala_vazia: sustain físico e mental leve; sem XP fora de combate.
+ * - sala_fonte: sustain mental/mágico; sem cura de Vida.
+ * - [CHANGE] sala_vazia e sala_fonte usam `singleChoiceActs:true`:
+ *   o jogador pode explorar sem usar nada, mas só pode escolher 1 ação local por sala.
+ * - [TODO] Sala armadilha será revisada depois para dano por Vida/Energia/Sanidade
+ *   comparando Precisão/Agilidade/Defesa contra a severidade da sala por andar.
  */
 export const ROOMS = {
   'sala_vazia': {
@@ -12,21 +16,25 @@ export const ROOMS = {
     titleKey: 'room.sala_vazia.title',
     descKey:  'room.sala_vazia.desc',
     bg: 'assets/bg/sala_vazia.jpg',
+    singleChoiceActs: true,
     actions: [
-      // Descansar: +80% do máximo de Energia (inteiro)
+      // Descansar: sustain físico básico (Vida + Energia)
       { labelKey: 'action.descansar', role: 'act',
-        effects: [{ type: 'statusDeltaPctOfMax', key: 'energia', pct: 0.8 }] },
+        effects: [
+          { type: 'statusDeltaPctOfMax', key: 'vida',    pct: 0.2 },
+          { type: 'statusDeltaPctOfMax', key: 'energia', pct: 0.45 }
+        ] },
 
-      // Meditar: +20% Energia e +60% Sanidade (inteiros)
+      // Meditar: sustain mental/mágico leve
       { labelKey: 'action.meditar', role: 'act',
         effects: [
-          { type: 'statusDeltaPctOfMax', key: 'energia',  pct: 0.2 },
-          { type: 'statusDeltaPctOfMax', key: 'sanidade', pct: 0.6 }
+          { type: 'statusDeltaPctOfMax', key: 'mana',     pct: 0.2 },
+          { type: 'statusDeltaPctOfMax', key: 'sanidade', pct: 0.45 }
         ]},
 
-      // Treinar: +XP aleatório 5..10
-      { labelKey: 'action.treinar', role: 'act',
-        effects: [{ type: 'xpDeltaRange', min: 5, max: 10 }] },
+      // Tratar feridas: cura forte de Vida; valor inicial sujeito a revisão fina após testes.
+      { labelKey: 'action.tratar_feridas', role: 'act',
+        effects: [{ type: 'statusDeltaPctOfMax', key: 'vida', pct: 0.4 }] },
 
       // Explorar: custo de -10 Energia é aplicado no engine (sem XP)
       { labelKey: 'action.explorar', role: 'explore', effects: [] }
@@ -39,21 +47,25 @@ export const ROOMS = {
     titleKey: 'room.sala_fonte.title',
     descKey:  'room.sala_fonte.desc',
     bg: 'assets/bg/sala_fonte.jpg',
+    singleChoiceActs: true,
     actions: [
-      // Beber água: +80% de Mana
+      // Beber água: recuperação forte de Mana
       { labelKey: 'action.beber_agua', role: 'act',
-        effects: [{ type: 'statusDeltaPctOfMax', key: 'mana', pct: 0.8 }] },
+        effects: [{ type: 'statusDeltaPctOfMax', key: 'mana', pct: 0.7 }] },
 
-      // Lavar o rosto: +30% Energia, +50% Sanidade
+      // Lavar o rosto: recuperação mista de Energia e Sanidade
       { labelKey: 'action.lavar_rosto', role: 'act',
         effects: [
-          { type: 'statusDeltaPctOfMax', key: 'energia',  pct: 0.3 },
-          { type: 'statusDeltaPctOfMax', key: 'sanidade', pct: 0.5 }
+          { type: 'statusDeltaPctOfMax', key: 'energia',  pct: 0.35 },
+          { type: 'statusDeltaPctOfMax', key: 'sanidade', pct: 0.35 }
         ]},
 
-      // Contemplar: +80% Sanidade
+      // Contemplar: foco mental forte com um pequeno respiro de Mana
       { labelKey: 'action.contemplar', role: 'act',
-        effects: [{ type: 'statusDeltaPctOfMax', key: 'sanidade', pct: 0.8 }] },
+        effects: [
+          { type: 'statusDeltaPctOfMax', key: 'sanidade', pct: 0.6 },
+          { type: 'statusDeltaPctOfMax', key: 'mana',     pct: 0.1 }
+        ] },
 
       // Explorar: engine aplica -10 Energia
       { labelKey: 'action.explorar', role: 'explore', effects: [] }
