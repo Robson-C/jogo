@@ -3,14 +3,12 @@
  * [DOC]
  * Subsistema isolado para encontros da cena.
  * - Cria e limpa o encontro atual sem acoplar renderização ou HUD.
- * - Hoje suporta apenas encontro de combate simples com inimigo sorteado.
+ * - Hoje suporta combate normal e boss por andar.
  * - Mantém compatibilidade transitória com STATE.currentCombatEnemy.
  */
-import { STATE, nextRandom, getDay } from './state.js';
+import { STATE, nextRandom, getDay, getCurrentFloor } from './state.js';
 import { ROOMS } from './rooms.js';
-import { pickEnemyForFloor } from './enemies.js';
-
-const DEFAULT_ENCOUNTER_FLOOR = 1;
+import { pickEnemyForFloor, getBossForFloor } from './enemies.js';
 
 function getRoom(roomId) {
   return ROOMS[String(roomId)] || null;
@@ -20,10 +18,9 @@ function cloneEnemy(enemy) {
   return enemy && typeof enemy === 'object' ? { ...enemy } : null;
 }
 
-function normalizeEncounterFloor(room) {
-  const raw = Number(room?.encounterFloor);
-  if (!Number.isFinite(raw)) return DEFAULT_ENCOUNTER_FLOOR;
-  return Math.max(1, Math.floor(raw));
+function isBossEncounterForCurrentRoom(room) {
+  if (!room || room.encounterType !== 'combat') return false;
+  return String(STATE.floorBossState || '') === 'active';
 }
 
 export function isEncounterRoom(roomId) {
@@ -65,15 +62,19 @@ export function ensureEncounterForCurrentRoom() {
     return current;
   }
 
+  const floor = getCurrentFloor();
+  const isBoss = isBossEncounterForCurrentRoom(room);
   let enemy = null;
+
   if (room.encounterType === 'combat') {
-    enemy = cloneEnemy(pickEnemyForFloor(normalizeEncounterFloor(room), nextRandom));
+    enemy = cloneEnemy(isBoss ? getBossForFloor(floor) : pickEnemyForFloor(floor, nextRandom));
   }
 
   STATE.encounter = {
     type: String(room.encounterType),
     roomId,
-    floor: normalizeEncounterFloor(room),
+    floor,
+    isBoss,
     startedAtDay: getDay(),
     enemy,
     combat: room.encounterType === 'combat' ? { round: 1, turn: 'player' } : null

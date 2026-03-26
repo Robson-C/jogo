@@ -5,6 +5,7 @@
  * - sala_vazia: sustain físico e mental leve; sem XP fora de combate.
  * - sala_fonte: sustain mental/mágico; sem cura de Vida.
  * - sala_vazia e sala_fonte usam `singleChoiceActs:true`.
+ * - sala_armadilha e sala_combate usam o andar atual real da run.
  * - sala_combate agora expõe 4 slots estáveis: atacar, defender, habilidade e fugir.
  */
 export const ROOMS = {
@@ -60,7 +61,6 @@ export const ROOMS = {
     titleKey: 'room.sala_armadilha.title',
     descKey:  'room.sala_armadilha.desc',
     bg: 'assets/bg/sala_armadilha.jpg',
-    trapFloor: 1,
     exploreRequiresActFirst: true,
     actions: [
       { labelKey: 'action.desarmar', role: 'act', trapKind: 'desarmar', effects: [] },
@@ -74,7 +74,6 @@ export const ROOMS = {
     id: 'sala_combate',
     sceneMode: 'enemy',
     encounterType: 'combat',
-    encounterFloor: 1,
     bg: 'assets/bg/sala_vazia.jpg',
     actions: [
       { labelKey: 'action.atacar', role: 'combat_attack', effects: [] },

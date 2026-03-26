@@ -23,6 +23,7 @@ export const LOCALES = {
 
     // --- Salas (títulos) ---
     'room.sala_vazia.title': 'Sala Vazia',
+    'room.sala_vazia_faint_recovery.title': 'Sala Vazia',
     'room.sala_fonte.title': 'Sala com Fonte',
     'room.sala_armadilha.title': 'Sala com Armadilha',
     'room.sala_combate.title': 'Sala de Combate',
@@ -30,10 +31,18 @@ export const LOCALES = {
 
     // --- Descrições de salas (fallback padrão) ---
     'room.sala_vazia.desc': 'Uma sala silenciosa e vazia.',
+    'room.sala_vazia_faint_recovery.desc': 'Você desmaiou ao entrar e descansou um pouco. Ainda só consegue seguir em frente.',
     'room.sala_fonte.desc': 'Uma fonte de água límpida murmura ao centro.',
     'room.sala_armadilha.desc': 'Dispositivos suspeitos cobrem o chão. Cuidado ao agir.',
     'room.sala_combate.desc': 'Uma presença hostil bloqueia a passagem. Você precisa escapar.',
+    'room.sala_combate_cleared.title': 'Sala de Combate',
+    'room.sala_combate_cleared.desc': 'O inimigo caiu. A sala está vazia por enquanto. Você pode se preparar antes de seguir.',
+    'room.sala_combate_boss_cleared.title': 'Sala do Boss',
+    'room.sala_combate_boss_cleared.desc': 'O boss caiu. A passagem para o próximo andar está livre. Você pode se preparar antes de seguir.',
     'room.fim_de_jogo.desc': 'Sua jornada termina aqui — por enquanto.',
+    'room.fim_de_jogo.desc.death': 'Seus ferimentos foram demais. Você morre antes de seguir adiante.',
+    'room.fim_de_jogo.desc.insanity': 'Sua mente cede ao horror. Você enlouquece antes de continuar.',
+    'room.fim_de_jogo.desc.exhaustion': 'Seu corpo não responde mais. Você cai por exaustão.',
 
     // --- [NEW] Variações para Sala Vazia (7 seleções possíveis) ---
     // Selecionadas do seu conjunto: 1, 2, 4, 5, 7, 8, 9
@@ -65,12 +74,14 @@ export const LOCALES = {
     // --- Combate / fuga ---
     'combat.flee_success': 'Fuga bem-sucedida',
     'combat.flee_fail': 'Fuga falhou',
+    'combat.boss_flee_reset': 'O boss recuou. Ele pode reaparecer em 6 a 10 salas.',
     'trap.disarm_success': 'Armadilha desarmada',
     'trap.disarm_fail': 'Falha no desarme',
     'trap.force_success': 'Passagem forçada',
     'trap.force_fail': 'Você força a passagem, mas se fere',
     'trap.analyze_success': 'Rota segura encontrada',
     'combat.victory': 'Vitória',
+    'explore.empty_room_faint_recovery': 'Você desmaiou ao entrar na nova sala. Por sorte, ela estava vazia e você conseguiu descansar um pouco.',
 
     // --- Mensagens iniciais (intro) ---
     'intro.1': '...',

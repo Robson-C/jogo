@@ -36,11 +36,11 @@ function getDamageRollMultiplier() {
   return 0.8 + (nextRandom() * 0.4);
 }
 
-/** [DOC] Dano real desta etapa: max(1, round((atk*1.8) - (def*0.4) + 1)) com variação final 0.8..1.2 */
+/** [DOC] Dano real desta etapa: max(1, round((atk*1.4) - (def*0.8) + 1)) com variação final 0.8..1.2 */
 function calculateDamage(attackValue, defenseValue) {
   const atk = Math.max(0, Math.floor(Number(attackValue) || 0));
   const def = Math.max(0, Math.floor(Number(defenseValue) || 0));
-  const baseDamage = Math.max(1, Math.round((atk * 1.8) - (def * 0.4) + 1));
+  const baseDamage = Math.max(1, Math.round((atk * 1.4) - (def * 0.8) + 1));
   return Math.max(1, Math.round(baseDamage * getDamageRollMultiplier()));
 }
 

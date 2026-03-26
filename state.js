@@ -17,7 +17,7 @@
  *   - Backend expõe custo escalonado por atributo para a futura tela de distribuição.
  * - [NEW] Flag volátil de sessão `bootInitLogged` para evitar relogar as mensagens iniciais.
  */
-export const VERSION = '0.8.1-player-progression';
+export const VERSION = '0.8.2-floor-boss-progression';
 
 export const STATE = {
   version: VERSION,
@@ -30,17 +30,34 @@ export const STATE = {
   // [STATE] Dia atual da run (1..∞). UI: .runline-day
   day: 1,
 
+  // [STATE] Andar atual da run e progressão do boss do andar.
+  currentFloor: 1,
+  floorBossState: 'pending', // 'pending' | 'active' | 'defeated'
+  floorBossCountdown: 0,     // salas restantes até o próximo boss aparecer
+
+  // [STATE] Motivo do último fim de jogo ('death' | 'insanity' | 'exhaustion' | '')
+  gameOverCause: '',
+
   // [STATE] Sinalizador de sessão para logs introdutórios
   bootInitLogged: false, // [NEW] evita duplicar mensagens de abertura no mesmo boot
 
   // [STATE] Bônus volátil: o próximo sorteio de sala usa 50% de chance real para sala_vazia.
   nextRoomEmptyChanceRealBoost: false,
 
+  // [STATE] Sala vazia especial após desmaio ao explorar com energia zerada.
+  emptyRoomFaintRecoveryRoomId: '',
+
   // [STATE] Encontro atual da cena (volátil; null fora de salas com encontro).
   encounter: null,
 
   // [STATE][LEGACY] Mantido apenas por compatibilidade transitória com versões anteriores.
   currentCombatEnemy: null,
+
+  // [STATE] Sala de combate limpa atual (usa o roomId canônico enquanto o jogador ainda está nela).
+  clearedCombatRoomId: '',
+
+  // [STATE] Tipo da última sala de combate limpa ('normal' | 'boss').
+  clearedCombatRoomType: '',
 
   // [STATE] Jogador (BASE)
   player: {
@@ -717,6 +734,35 @@ export function addDay(delta) {
 }
 /* =====================[ FIM TRECHO 8 ]===================== */
 
+
+const RUN_FLOOR_MIN = 1;
+const RUN_FLOOR_MAX = 50;
+
+function _normFloor(v) {
+  const n = Math.floor(Number(v));
+  if (!isFinite(n) || n < RUN_FLOOR_MIN) return RUN_FLOOR_MIN;
+  if (n > RUN_FLOOR_MAX) return RUN_FLOOR_MAX;
+  return n;
+}
+
+export function getCurrentFloor() {
+  if (typeof STATE.currentFloor !== 'number' || !isFinite(STATE.currentFloor) || STATE.currentFloor < RUN_FLOOR_MIN) {
+    STATE.currentFloor = RUN_FLOOR_MIN;
+  }
+  return _normFloor(STATE.currentFloor);
+}
+
+export function setCurrentFloor(v) {
+  STATE.currentFloor = _normFloor(v);
+  return STATE.currentFloor;
+}
+
+export function addCurrentFloor(delta = 1) {
+  const d = Math.floor(Number(delta));
+  if (!isFinite(d)) return getCurrentFloor();
+  return setCurrentFloor(getCurrentFloor() + d);
+}
+
 /* =====================[ TRECHO 9: state.js - Defaults do jogador (runtime) ]===================== */
 /**
  * [DOC] initPlayerDefaults()
@@ -749,7 +795,16 @@ export function initPlayerDefaults() {
   STATE.player.pontosAtributoGastos = 0;
   STATE.player.activeCombatSkillId = '';
   STATE.player.activeCombatSkillName = '';
+  STATE.currentFloor = 1;
+  STATE.gameOverCause = '';
+  STATE.floorBossState = 'pending';
+  STATE.floorBossCountdown = 0;
+  STATE.emptyRoomFaintRecoveryRoomId = '';
+  STATE.clearedCombatRoomId = '';
+  STATE.clearedCombatRoomType = '';
 }
+
+
 
 /** [DOC] Habilidade ativa de combate equipada pelo jogador. */
 export function setActiveCombatSkill(skillId, skillName = '') {
