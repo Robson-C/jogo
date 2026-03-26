@@ -56,12 +56,21 @@ export const LOCALES = {
     'action.desarmar': 'Desarmar',
     'action.forcar': 'Forçar',
     'action.analisar': 'Analisar',
+    'action.atacar': 'Atacar',
+    'action.defender': 'Defender',
+    'action.habilidade': 'Habilidade',
     'action.fugir': 'Fugir',
     'action.jogar_novamente': 'Jogar Novamente',
 
     // --- Combate / fuga ---
     'combat.flee_success': 'Fuga bem-sucedida',
     'combat.flee_fail': 'Fuga falhou',
+    'trap.disarm_success': 'Armadilha desarmada',
+    'trap.disarm_fail': 'Falha no desarme',
+    'trap.force_success': 'Passagem forçada',
+    'trap.force_fail': 'Você força a passagem, mas se fere',
+    'trap.analyze_success': 'Rota segura encontrada',
+    'combat.victory': 'Vitória',
 
     // --- Mensagens iniciais (intro) ---
     'intro.1': '...',

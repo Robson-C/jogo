@@ -63,7 +63,9 @@ export const STATE = {
     level: 1,                 // nível atual (1..99)
     xp: 0,                    // total acumulado
     pontosAtributoLivres: 0,  // +3 por nível acima do 1; oculto na UI por enquanto
-    pontosAtributoGastos: 0   // reservado para a futura tela de distribuição
+    pontosAtributoGastos: 0,  // reservado para a futura tela de distribuição
+    activeCombatSkillId: '',
+    activeCombatSkillName: ''
   },
 
   // [STATE] Modificadores ativos (não alteram base; aplicados na leitura efetiva)
@@ -339,6 +341,67 @@ export function getAtributoUpgradeCost(key) {
   if (!ATRIB_KEYS.includes(key)) return 0;
   return getAttributeUpgradeCost(STATE.player[key]);
 }
+/** [DOC] Aplica uma distribuição de atributos em lote (all-or-nothing), consumindo apenas pontos livres. */
+export function applyAttributeAllocation(plan) {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    return { ok: false, reason: 'invalid_plan', applied: null, spentCost: 0, freeBefore: getFreeAttributePoints(), freeAfter: getFreeAttributePoints() };
+  }
+
+  const normalized = {};
+  let requestedTotal = 0;
+  for (let i = 0; i < ATRIB_KEYS.length; i++) {
+    const key = ATRIB_KEYS[i];
+    const amount = Math.max(0, Math.floor(Number(plan[key]) || 0));
+    normalized[key] = amount;
+    requestedTotal += amount;
+  }
+
+  const freeBefore = getFreeAttributePoints();
+  if (requestedTotal <= 0) {
+    return { ok: false, reason: 'empty_plan', applied: { ...normalized }, spentCost: 0, freeBefore, freeAfter: freeBefore };
+  }
+
+  let totalCost = 0;
+  for (let i = 0; i < ATRIB_KEYS.length; i++) {
+    const key = ATRIB_KEYS[i];
+    let cur = Math.max(0, Math.floor(Number(STATE.player[key]) || 0));
+    const amount = normalized[key];
+
+    for (let step = 0; step < amount; step++) {
+      if (cur >= ATTRIBUTE_MAX) {
+        return { ok: false, reason: 'attribute_max_cap', key, applied: null, spentCost: 0, freeBefore, freeAfter: freeBefore };
+      }
+      totalCost += getAttributeUpgradeCost(cur);
+      cur += 1;
+    }
+  }
+
+  if (totalCost <= 0) {
+    return { ok: false, reason: 'zero_cost', applied: { ...normalized }, spentCost: 0, freeBefore, freeAfter: freeBefore };
+  }
+  if (freeBefore < totalCost) {
+    return { ok: false, reason: 'insufficient_points', applied: null, spentCost: totalCost, freeBefore, freeAfter: freeBefore };
+  }
+
+  for (let i = 0; i < ATRIB_KEYS.length; i++) {
+    const key = ATRIB_KEYS[i];
+    const cur = Math.max(0, Math.floor(Number(STATE.player[key]) || 0));
+    const amount = normalized[key];
+    STATE.player[key] = Math.max(0, Math.min(ATTRIBUTE_MAX, cur + amount));
+  }
+
+  const spentBefore = Math.max(0, Math.floor(Number(STATE.player[ATTR_SPENT_KEY]) || 0));
+  STATE.player[ATTR_SPENT_KEY] = spentBefore + totalCost;
+  STATE.player[ATTR_FREE_KEY] = Math.max(0, freeBefore - totalCost);
+
+  return {
+    ok: true,
+    applied: { ...normalized },
+    spentCost: totalCost,
+    freeBefore,
+    freeAfter: Math.max(0, freeBefore - totalCost)
+  };
+}
 /** [DOC] Recalcula e aplica o nível correto com base em STATE.player.xp (suporta ganho/perda). */
 function recalcLevelFromTotalXP() {
   let total = STATE.player.xp;
@@ -481,7 +544,8 @@ export const PlayerAPI = {
     STATE.player[ATTR_FREE_KEY] = free - cost;
     STATE.player[ATTR_SPENT_KEY] = Math.max(0, Math.floor(Number(STATE.player[ATTR_SPENT_KEY]) || 0)) + cost;
     return true;
-  }
+  },
+  applyAttributeAllocation: (plan) => applyAttributeAllocation(plan)
 };
 /* =====================[ FIM TRECHO 5 ]===================== */
 
@@ -683,5 +747,29 @@ export function initPlayerDefaults() {
   STATE.player.xp = 0;
   STATE.player.pontosAtributoLivres = 0;
   STATE.player.pontosAtributoGastos = 0;
+  STATE.player.activeCombatSkillId = '';
+  STATE.player.activeCombatSkillName = '';
+}
+
+/** [DOC] Habilidade ativa de combate equipada pelo jogador. */
+export function setActiveCombatSkill(skillId, skillName = '') {
+  STATE.player.activeCombatSkillId = (typeof skillId === 'string' && skillId) ? skillId : '';
+  STATE.player.activeCombatSkillName = (typeof skillName === 'string' && skillName) ? skillName : '';
+  return getActiveCombatSkill();
+}
+
+export function clearActiveCombatSkill() {
+  STATE.player.activeCombatSkillId = '';
+  STATE.player.activeCombatSkillName = '';
+  return null;
+}
+
+export function getActiveCombatSkill() {
+  const id = typeof STATE.player.activeCombatSkillId === 'string' ? STATE.player.activeCombatSkillId : '';
+  if (!id) return null;
+  const name = typeof STATE.player.activeCombatSkillName === 'string' && STATE.player.activeCombatSkillName
+    ? STATE.player.activeCombatSkillName
+    : id;
+  return { id, name };
 }
 /* =====================[ FIM TRECHO 9 ]===================== */

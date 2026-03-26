@@ -3,33 +3,36 @@
  * [DOC]
  * Núcleo de fluxo do jogo: render de sala, execução de ações e transições.
  * Mantém compatibilidade com state/ui/i18n/rooms e não inicia rede (offline).
- * [CHANGE] Política de log MINIMALISTA (mantida):
- *  - NÃO logar descrição de sala.
- *  - 1 linha por ação: "<Evento>:" (sempre) + efeitos agregados se houver.
- *  - Efeitos "noop" não geram mensagens de efeito.
- * [CHANGE] Runner ampliado com tipos:
- *  - statusDeltaPctOfMax { key:'energia', pct:0.8 }
- *  - xpDeltaRange { min:5, max:10 }
- * [CHANGE] Explorar: **remove XP**; mantém apenas **-10 Energia**.
- * [CHANGE] Sala vazia e sala fonte agora são salas de escolha única:
- *   o jogador pode explorar sem usar nada, mas só pode usar 1 ação local por sala.
+ * [CHANGE] Combate com resolução centralizada:
+ *  - combat_flow calcula turno/resultado.
+ *  - engine decide XP, transição de sala e Game Over em um ponto único.
+ * [CHANGE] Preparado para novas ações de combate: ataque, defesa e habilidade dinâmica.
  */
 import {
   STATE, nextRandom, getLogLastNTexts, appendLog,
   PlayerAPI, addModifier,
   removeModifierById, removeModifiersBySource, removeModifiersByTag,
   addDay, getDay, setDay, initPlayerDefaults, clearAllModifiers,
-  getEffectiveStatus, getEffectiveStatusMax // [CHANGE] novo import para pct do máximo
+  getEffectiveStatus, getEffectiveStatusMax, getEffectiveAtributo, getActiveCombatSkill
 } from './state.js';
 import { setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, renderHUD } from './ui.js';
 import { showRoomPanel, showEnemyPanel } from './scene_panel.js';
 import { ROOMS, ROOM_IDS } from './rooms.js';
 import { t } from './i18n.js';
 import { ensureEncounterForCurrentRoom, clearCurrentEncounter, isCombatEncounterRoom } from './encounter.js';
-import { isPlayerCombatTurn, queueCombatPlayerAction, resolvePendingEnemyTurn } from './combat_flow.js';
+import {
+  isPlayerCombatTurn,
+  queueCombatPlayerAction,
+  resolvePendingEnemyTurn,
+  getCombatActionAvailability,
+  hasUsableActiveCombatSkill
+} from './combat_flow.js';
 
-/* [STATE] Lock para anti multi-input (desbloqueado no próximo rAF) */
+/* [STATE] Lock para anti multi-input e janela de resposta inimiga */
 let inputLocked = false;
+let combatResponseSequence = 0;
+
+const ENEMY_RESPONSE_DELAY_MS = 500;
 
 /* ID canônico de sala especial */
 const GAME_OVER_ROOM_ID = 'fim_de_jogo';
@@ -79,7 +82,7 @@ function pickRoomDescVariant(roomId) {
   const idx = (h % 7) + 1; // 1..7
   const key = `room.${roomId}.desc.${idx}`;
   const val = t(key, '');
-  return (val && val !== key) ? val : null; // fallback seguro
+  return (val && val !== key) ? val : null;
 }
 /* =====================[ FIM TRECHO 3 ]===================== */
 
@@ -90,15 +93,34 @@ function isTrapRoom(roomId)    { return String(roomId) === 'sala_armadilha'; }
 function isCombatRoom(roomId)  { return isCombatEncounterRoom(roomId); }
 function isGameOverRoom(roomId){ return String(roomId) === GAME_OVER_ROOM_ID; }
 
-/**
- * [DOC][CHANGE] Antes registrava a descrição da sala no log. Agora **NÃO LOGA NADA**.
- * A descrição é exibida somente na UI via `renderRoom()`.
- */
-function logRoomEntry(/* roomId */) {
+function logRoomEntry() {
   /* intencionalmente vazio (política minimalista de log) */
 }
 
+function invalidatePendingCombatResponse() {
+  combatResponseSequence += 1;
+}
+
+function createCombatResponseToken() {
+  combatResponseSequence += 1;
+  return combatResponseSequence;
+}
+
+function isCombatResponseTokenCurrent(token) {
+  return Number(token) === combatResponseSequence;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitEnemyResponseWindow(token) {
+  await wait(ENEMY_RESPONSE_DELAY_MS);
+  return isCombatResponseTokenCurrent(token);
+}
+
 function clearCombatEnemy() {
+  invalidatePendingCombatResponse();
   clearCurrentEncounter();
 }
 
@@ -121,14 +143,20 @@ function restartRun() {
   renderHUD();
 }
 
-/** [DOC] Game Over por energia efetiva 0 → entra na sala de Fim de Jogo; retorna true se entrou. */
-function checkGameOverByEnergy() {
+function goToGameOver() {
+  if (isGameOverRoom(STATE.currentRoomId)) return true;
+  clearCombatEnemy();
+  STATE.currentRoomId = GAME_OVER_ROOM_ID;
+  renderRoom();
+  return true;
+}
+
+/** [DOC] Game Over centralizado por Vida ou Energia efetivas zeradas. */
+function checkGameOver() {
   const energyEff = getEffectiveStatus('energia');
-  if (energyEff <= 0 && !isGameOverRoom(STATE.currentRoomId)) {
-    clearCombatEnemy();
-    STATE.currentRoomId = GAME_OVER_ROOM_ID;
-    renderRoom();
-    return true;
+  const lifeEff = getEffectiveStatus('vida');
+  if ((energyEff <= 0 || lifeEff <= 0) && !isGameOverRoom(STATE.currentRoomId)) {
+    return goToGameOver();
   }
   return false;
 }
@@ -136,22 +164,23 @@ function checkGameOverByEnergy() {
 
 
 /* =====================[ TRECHO 5: Renderização da Sala (Título, Descrição, Ações) ]===================== */
-/**
- * [DOC]
- * - Aplica título (i18n), descrição (variação para sala_vazia) e background declarativo.
- * - Configura os 4 botões conforme a lógica da sala e do dia.
- * - Sala de Game Over: apenas "Jogar Novamente" no slot 4.
- *
- * [CHANGE][WHY] Botões agora exibem custo/benefício no texto:
- *   Ex.: "Explorar [-10 ⚡]", "Meditar [+20% 💧 +45% 🧠]", "Tratar feridas [+40% ❤️]"
- */
 const STAT_EMOJI = { vida:'❤️', energia:'⚡', mana:'💧', sanidade:'🧠' };
 const ATR_EMOJI  = { ataque:'⚔️', defesa:'🛡️', precisao:'🎯', agilidade:'💨' };
 const XP_EMOJI   = '⭐';
-const EXPLORE_ENERGY_COST = 10; // [WHY] custo padrão do explorar (engine aplica -10 energia)
+const EXPLORE_ENERGY_COST = 10;
+const COMBAT_ATTACK_ENERGY_COST = 5;
+const COMBAT_DEFEND_ENERGY_COST = 5;
 const FLEE_ENERGY_COST = 5;
 const FLEE_SANITY_COST = 5;
 const FLEE_SUCCESS_CHANCE = 0.5;
+
+const TRAP_RULES_BY_FLOOR = Object.freeze({
+  1: Object.freeze({ difficulty: 12, disarmFailLife: 4, disarmFailSanity: 6, forceEnergy: 6, forceFailLife: 5, analyzeSanity: 7 }),
+  2: Object.freeze({ difficulty: 14, disarmFailLife: 5, disarmFailSanity: 7, forceEnergy: 7, forceFailLife: 6, analyzeSanity: 8 }),
+  3: Object.freeze({ difficulty: 16, disarmFailLife: 6, disarmFailSanity: 8, forceEnergy: 8, forceFailLife: 7, analyzeSanity: 9 }),
+  4: Object.freeze({ difficulty: 18, disarmFailLife: 7, disarmFailSanity: 9, forceEnergy: 9, forceFailLife: 8, analyzeSanity: 10 }),
+  5: Object.freeze({ difficulty: 20, disarmFailLife: 8, disarmFailSanity: 10, forceEnergy: 10, forceFailLife: 9, analyzeSanity: 11 })
+});
 
 function _pctToInt(pct) {
   const n = Number(pct);
@@ -160,24 +189,136 @@ function _pctToInt(pct) {
   return Number.isFinite(p) ? p : null;
 }
 
-function _formatEffectsForButton(action, role) {
-  // Explorar: custo padrão sempre visível
+
+function clampTrapFloor(rawFloor) {
+  const floor = Math.floor(Number(rawFloor) || 1);
+  if (floor < 1) return 1;
+  if (floor > 5) return 5;
+  return floor;
+}
+
+function getTrapRules(room) {
+  const floor = clampTrapFloor(room && room.trapFloor);
+  return TRAP_RULES_BY_FLOOR[floor] || TRAP_RULES_BY_FLOOR[1];
+}
+
+function getCombatActionCostPreview(role) {
+  if (role === 'combat_attack') return `[-${COMBAT_ATTACK_ENERGY_COST} ${STAT_EMOJI.energia}]`;
+  if (role === 'combat_defend') return `[-${COMBAT_DEFEND_ENERGY_COST} ${STAT_EMOJI.energia}]`;
+  return '';
+}
+
+function getTrapActionPreview(action, room) {
+  const trapKind = action && typeof action.trapKind === 'string' ? action.trapKind : '';
+  if (!trapKind) return '';
+  const rules = getTrapRules(room);
+  switch (trapKind) {
+    case 'desarmar':
+      return `[falha: -${rules.disarmFailLife} ${STAT_EMOJI.vida} -${rules.disarmFailSanity} ${STAT_EMOJI.sanidade}]`;
+    case 'forcar':
+      return `[-${rules.forceEnergy} ${STAT_EMOJI.energia} | falha: -${rules.forceFailLife} ${STAT_EMOJI.vida}]`;
+    case 'analisar':
+      return `[-${rules.analyzeSanity} ${STAT_EMOJI.sanidade}]`;
+    default:
+      return '';
+  }
+}
+
+function canPayCombatActionCost(role) {
+  const energy = getEffectiveStatus('energia');
+  const sanity = getEffectiveStatus('sanidade');
+  switch (role) {
+    case 'combat_attack':
+      return energy >= COMBAT_ATTACK_ENERGY_COST;
+    case 'combat_defend':
+      return energy >= COMBAT_DEFEND_ENERGY_COST;
+    case 'flee':
+      return energy >= FLEE_ENERGY_COST && sanity >= FLEE_SANITY_COST;
+    default:
+      return true;
+  }
+}
+
+function applyStatusAndGetRealDelta(key, delta) {
+  if (typeof key !== 'string' || !Number.isFinite(delta)) return 0;
+  const before = getEffectiveStatus(key);
+  PlayerAPI.addStatus(key, delta);
+  const after = getEffectiveStatus(key);
+  return Math.trunc(after - before);
+}
+
+function formatStatusDeltaMessage(label, delta) {
+  return `${delta >= 0 ? '+' : ''}${delta} ${label}`;
+}
+
+function rollTrapBonus() {
+  return Math.floor(nextRandom() * 4);
+}
+
+function runTrapAction(trapKind, room) {
+  const rules = getTrapRules(room);
+  const msgs = [];
+
+  switch (trapKind) {
+    case 'desarmar': {
+      const score = getEffectiveAtributo('precisao') + Math.floor(getEffectiveAtributo('agilidade') / 2) + rollTrapBonus();
+      if (score >= rules.difficulty) {
+        msgs.push(t('trap.disarm_success', 'Armadilha desarmada'));
+        return msgs;
+      }
+      msgs.push(t('trap.disarm_fail', 'Falha no desarme'));
+      const lifeDelta = applyStatusAndGetRealDelta('vida', -rules.disarmFailLife);
+      const sanityDelta = applyStatusAndGetRealDelta('sanidade', -rules.disarmFailSanity);
+      if (lifeDelta !== 0) msgs.push(formatStatusDeltaMessage('Vida', lifeDelta));
+      if (sanityDelta !== 0) msgs.push(formatStatusDeltaMessage('Sanidade', sanityDelta));
+      return msgs;
+    }
+    case 'forcar': {
+      const energyDelta = applyStatusAndGetRealDelta('energia', -rules.forceEnergy);
+      const score = getEffectiveAtributo('ataque') + Math.floor(getEffectiveAtributo('defesa') / 2) + rollTrapBonus();
+      if (score >= rules.difficulty) {
+        msgs.push(t('trap.force_success', 'Passagem forçada'));
+        if (energyDelta !== 0) msgs.push(formatStatusDeltaMessage('Energia', energyDelta));
+        return msgs;
+      }
+      msgs.push(t('trap.force_fail', 'Você força a passagem, mas se fere'));
+      if (energyDelta !== 0) msgs.push(formatStatusDeltaMessage('Energia', energyDelta));
+      const lifeDelta = applyStatusAndGetRealDelta('vida', -rules.forceFailLife);
+      if (lifeDelta !== 0) msgs.push(formatStatusDeltaMessage('Vida', lifeDelta));
+      return msgs;
+    }
+    case 'analisar': {
+      msgs.push(t('trap.analyze_success', 'Rota segura encontrada'));
+      const sanityDelta = applyStatusAndGetRealDelta('sanidade', -rules.analyzeSanity);
+      if (sanityDelta !== 0) msgs.push(formatStatusDeltaMessage('Sanidade', sanityDelta));
+      return msgs;
+    }
+    default:
+      return msgs;
+  }
+}
+
+function _formatEffectsForButton(action, role, room = null) {
   if (role === 'explore') return `[-${EXPLORE_ENERGY_COST} ${STAT_EMOJI.energia}]`;
   if (role === 'flee') return `[-${FLEE_ENERGY_COST} ${STAT_EMOJI.energia} -${FLEE_SANITY_COST} ${STAT_EMOJI.sanidade}]`;
+
+  const combatPreview = getCombatActionCostPreview(role);
+  if (combatPreview) return combatPreview;
+
+  const trapPreview = getTrapActionPreview(action, room);
+  if (trapPreview) return trapPreview;
 
   const effs = action && Array.isArray(action.effects) ? action.effects : [];
   if (!effs.length) return '';
 
   const parts = [];
-
   for (let i = 0; i < effs.length; i++) {
     const eff = effs[i];
     if (!eff || typeof eff.type !== 'string') continue;
 
     switch (eff.type) {
-      case 'noop': {
+      case 'noop':
         break;
-      }
       case 'statusDeltaPctOfMax': {
         const key = String(eff.key || '');
         const p = _pctToInt(eff.pct);
@@ -219,10 +360,8 @@ function _formatEffectsForButton(action, role) {
         if (a !== 0) parts.push(`${a >= 0 ? '+' : ''}${a} ${XP_EMOJI}`);
         break;
       }
-      // addMod/removeMod* propositalmente não entram no texto do botão (evita poluição)
-      default: {
+      default:
         break;
-      }
     }
   }
 
@@ -257,7 +396,6 @@ export function renderRoom() {
   const isGO = isGameOverRoom(STATE.currentRoomId);
   const sceneMode = room.sceneMode === 'enemy' ? 'enemy' : 'room';
 
-  // Scene panel: modo exclusivo por sala.
   if (sceneMode === 'enemy') {
     const encounter = ensureEncounterForCurrentRoom();
     showEnemyPanel(encounter && encounter.enemy ? encounter.enemy : null, { backgroundUrl: room.bg || null });
@@ -280,7 +418,6 @@ export function renderRoom() {
     showRoomPanel({ title, desc: desc || '', backgroundUrl: room.bg || null });
   }
 
-  // Game Over: 3 inativos + "Jogar Novamente"
   if (isGO) {
     for (let i = 0; i < 3; i++) { setActionLabel(i, ''); enableAction(i, false); }
     setActionLabel(3, t('action.jogar_novamente', 'Jogar Novamente'));
@@ -288,28 +425,37 @@ export function renderRoom() {
     return;
   }
 
-  // Sala de combate: slot 1 = atacar, slot 4 = fugir
   if (combat) {
     const playerTurn = isPlayerCombatTurn();
-
+    const availability = getCombatActionAvailability();
+    const skill = getActiveCombatSkill();
     const attackAction = room.actions?.[0];
-    const attackLabel = attackAction?.labelKey
-      ? t(attackAction.labelKey, attackAction.label || '')
-      : (attackAction?.label || '');
-    setActionLabel(0, attackLabel);
-    enableAction(0, !!attackAction && playerTurn);
-
-    for (let i = 1; i < 3; i++) { setActionLabel(i, ''); enableAction(i, false); }
-
+    const defendAction = room.actions?.[1];
+    const skillAction = room.actions?.[2];
     const fleeAction = room.actions?.[3];
-    const baseLabel = fleeAction?.labelKey ? t(fleeAction.labelKey, fleeAction.label || '') : (fleeAction?.label || '');
-    const suffix = _formatEffectsForButton(fleeAction, 'flee');
-    setActionLabel(3, suffix ? `${baseLabel} ${suffix}` : baseLabel);
-    enableAction(3, !!fleeAction && playerTurn);
+
+    const attackLabel = attackAction?.labelKey ? t(attackAction.labelKey, attackAction.label || '') : (attackAction?.label || '');
+    const defendLabel = defendAction?.labelKey ? t(defendAction.labelKey, defendAction.label || '') : (defendAction?.label || '');
+    const skillBaseLabel = (skill && skill.name) || (skillAction?.labelKey ? t(skillAction.labelKey, skillAction.label || '') : (skillAction?.label || ''));
+    const attackSuffix = _formatEffectsForButton(attackAction, 'combat_attack', room);
+    const defendSuffix = _formatEffectsForButton(defendAction, 'combat_defend', room);
+    const fleeBaseLabel = fleeAction?.labelKey ? t(fleeAction.labelKey, fleeAction.label || '') : (fleeAction?.label || '');
+    const fleeSuffix = _formatEffectsForButton(fleeAction, 'flee', room);
+
+    setActionLabel(0, attackSuffix ? `${attackLabel} ${attackSuffix}` : attackLabel);
+    enableAction(0, !!attackAction && !!availability.attack && playerTurn && canPayCombatActionCost('combat_attack'));
+
+    setActionLabel(1, defendSuffix ? `${defendLabel} ${defendSuffix}` : defendLabel);
+    enableAction(1, !!defendAction && !!availability.defend && playerTurn && canPayCombatActionCost('combat_defend'));
+
+    setActionLabel(2, skillBaseLabel);
+    enableAction(2, !!skillAction && !!availability.skill && playerTurn && !!skill && hasUsableActiveCombatSkill());
+
+    setActionLabel(3, fleeSuffix ? `${fleeBaseLabel} ${fleeSuffix}` : fleeBaseLabel);
+    enableAction(3, !!fleeAction && !!availability.flee && playerTurn && canPayCombatActionCost('flee'));
     return;
   }
 
-  // Regras normais (inclui sala armadilha e salas de escolha única)
   let anyNonExploreUsed = false;
   const singleChoiceActs = !!room.singleChoiceActs;
   if (trap || singleChoiceActs) {
@@ -327,7 +473,7 @@ export function renderRoom() {
     if (a) {
       const baseLabel = a.labelKey ? t(a.labelKey, a.label || '') : (a.label || '');
       const role = a.role || 'act';
-      const suffix = _formatEffectsForButton(a, role);
+      const suffix = _formatEffectsForButton(a, role, room);
       const finalLabel = suffix ? `${baseLabel} ${suffix}` : baseLabel;
 
       setActionLabel(i, finalLabel);
@@ -357,16 +503,6 @@ export function renderRoom() {
 
 
 /* =====================[ TRECHO 6: Effect Runner (execução + coleta de mensagens) ]===================== */
-/**
- * [DOC]
- * Interpreta efeitos declarativos e aplica no estado.
- * Retorna lista de mensagens de efeito para agregação (1 linha por ação).
- * [CHANGE] Suporta:
- *  - statusDeltaPctOfMax { key, pct }   → floor(pct * maxEfetivo(key)) aplicado em status
- *  - xpDeltaRange { min, max }          → inteiro uniforme [min..max]
- * Mantidos:
- *  - noop, statusDelta, atributoDelta, statusMaxDelta, xpDelta, addMod, removeMod*
- */
 function runEffectsCollectMessages(effects) {
   const msgs = [];
   if (!effects || !effects.length) return msgs;
@@ -375,23 +511,14 @@ function runEffectsCollectMessages(effects) {
   const ATR_LABEL  = { ataque:'Ataque', defesa:'Defesa', precisao:'Precisão', agilidade:'Agilidade' };
 
   const toInt = (n) => Math.trunc(Number(n) || 0);
-  const applyStatusAndGetRealDelta = (key, delta) => {
-    if (typeof key !== 'string' || !Number.isFinite(delta)) return 0;
-    const before = getEffectiveStatus(key);
-    PlayerAPI.addStatus(key, delta);
-    const after = getEffectiveStatus(key);
-    return toInt(after - before);
-  };
 
   for (let i = 0; i < effects.length; i++) {
     const eff = effects[i];
     if (!eff || typeof eff.type !== 'string') continue;
 
     switch (eff.type) {
-      case 'noop': {
-        // não gera mensagem
+      case 'noop':
         break;
-      }
       case 'statusDelta': {
         const { key, delta } = eff;
         if (typeof key === 'string' && Number.isFinite(delta)) {
@@ -401,7 +528,7 @@ function runEffectsCollectMessages(effects) {
         }
         break;
       }
-      case 'statusDeltaPctOfMax': { // [CHANGE] novo tipo
+      case 'statusDeltaPctOfMax': {
         const { key, pct } = eff;
         if (typeof key === 'string' && Number.isFinite(pct)) {
           const maxEff = getEffectiveStatusMax(key);
@@ -410,8 +537,6 @@ function runEffectsCollectMessages(effects) {
             const realDelta = applyStatusAndGetRealDelta(key, delta);
             const label = STAT_LABEL[key] || key;
             if (realDelta !== 0) msgs.push(`${realDelta >= 0 ? '+' : ''}${toInt(realDelta)} ${label}`);
-          } else {
-            // delta 0 → sem mensagem (mantém política minimalista)
           }
         }
         break;
@@ -442,7 +567,7 @@ function runEffectsCollectMessages(effects) {
         }
         break;
       }
-      case 'xpDeltaRange': { // [CHANGE] novo tipo
+      case 'xpDeltaRange': {
         const min = Math.floor(Number(eff.min));
         const max = Math.floor(Number(eff.max));
         if (Number.isFinite(min) && Number.isFinite(max) && max >= min) {
@@ -476,7 +601,8 @@ function runEffectsCollectMessages(effects) {
         if (typeof tag === 'string') { removeModifiersByTag(tag); msgs.push('Mod removido'); }
         break;
       }
-      default: { break; }
+      default:
+        break;
     }
   }
   return msgs;
@@ -484,20 +610,108 @@ function runEffectsCollectMessages(effects) {
 /* =====================[ FIM TRECHO 6 ]===================== */
 
 
-/* =====================[ TRECHO 7: Input Lock e Dispatcher de Ações (log minimalista) ]===================== */
-/**
- * [DOC]
- * - `withInputLock` evita múltiplos cliques simultâneos.
- * - `handleAction` executa a ação (0..3), aplica custos/efeitos,
- *   sorteia próxima sala em "explore", atualiza HUD e log curto.
- * [CHANGE] Explorar: apenas -10 Energia (sem XP).
- * [CHANGE][WHY] O texto do botão pode conter sufixo de efeitos "[...]";
- *               o log deve usar o label base quando não houver labelKey.
- */
+/* =====================[ TRECHO 7: Resolução central de combate ]===================== */
+function appendActionLog(eventLabel, effectMsgs) {
+  if (!eventLabel) return;
+  const tail = effectMsgs.length ? ` ${effectMsgs.join(', ')}` : '';
+  appendLog({ sev: 'mod', msg: `${String(eventLabel)}:${tail}`, ctx: { day: getDay() } });
+}
+
+function appendActionLogSections(eventLabel, sections) {
+  if (!eventLabel) return;
+  const normalized = Array.isArray(sections) ? sections : [];
+  let wroteAny = false;
+
+  for (let i = 0; i < normalized.length; i++) {
+    const section = normalized[i];
+    const msgs = Array.isArray(section)
+      ? section.filter(msg => typeof msg === 'string' && msg.trim())
+      : [];
+    if (!msgs.length) continue;
+
+    const prefix = wroteAny ? '' : `${String(eventLabel)}: `;
+    appendLog({ sev: 'mod', msg: `${prefix}${msgs.join(', ')}`, ctx: { day: getDay() } });
+    wroteAny = true;
+  }
+
+  if (!wroteAny) {
+    appendLog({ sev: 'mod', msg: `${String(eventLabel)}:`, ctx: { day: getDay() } });
+  }
+}
+
+function moveToNextRoomAfterCombat(effectMsgs) {
+  STATE.nextRoomEmptyChanceRealBoost = true;
+  addDay(1);
+  setRunlineDay(getDay());
+  resetActionUsageForToday();
+  clearCombatEnemy();
+  STATE.currentRoomId = pickNextRoomId();
+  renderRoom();
+}
+
+function resolveCombatOutcome(outcome) {
+  const safeOutcome = outcome && typeof outcome === 'object' ? outcome : { kind: 'none' };
+  const summaryMsgs = [];
+  switch (safeOutcome.kind) {
+    case 'victory': {
+      const xpReward = Math.max(0, Math.floor(Number(safeOutcome.xpReward) || 0));
+      if (xpReward > 0) {
+        PlayerAPI.addXP(xpReward);
+        summaryMsgs.push(`+${xpReward} XP`);
+      }
+      summaryMsgs.unshift(t('combat.victory', 'Vitória'));
+      moveToNextRoomAfterCombat(summaryMsgs);
+      return { terminal: true, summaryMsgs };
+    }
+    case 'defeat': {
+      goToGameOver();
+      return { terminal: true, summaryMsgs };
+    }
+    default:
+      return { terminal: false, summaryMsgs };
+  }
+}
+
+function resolveCombatEnemyPhase() {
+  const enemyStep = resolvePendingEnemyTurn();
+  if (!enemyStep.ok) return false;
+  for (const msg of enemyStep.enemyLogs) {
+    appendLog({ sev: 'combat', msg, ctx: { day: getDay() } });
+  }
+  resolveCombatOutcome(enemyStep.outcome);
+  renderRoom();
+  return true;
+}
+
+async function resolveCombatEnemyPhaseWithDelay() {
+  const responseToken = createCombatResponseToken();
+  const stillValid = await waitEnemyResponseWindow(responseToken);
+  if (!stillValid) return false;
+  return resolveCombatEnemyPhase();
+}
+/* =====================[ FIM TRECHO 7 ]===================== */
+
+
+/* =====================[ TRECHO 8: Input Lock e Dispatcher de Ações (log minimalista) ]===================== */
 function withInputLock(fn) {
   if (inputLocked) return;
   inputLocked = true;
-  try { fn(); } finally { requestAnimationFrame(() => { inputLocked = false; }); }
+
+  const unlock = () => {
+    requestAnimationFrame(() => { inputLocked = false; });
+  };
+
+  try {
+    const result = fn();
+    if (result && typeof result.then === 'function') {
+      return result.finally(unlock);
+    }
+    unlock();
+    return result;
+  } catch (err) {
+    unlock();
+    throw err;
+  }
 }
 
 function _stripButtonSuffix(label) {
@@ -506,11 +720,17 @@ function _stripButtonSuffix(label) {
   return cut > 0 ? s.slice(0, cut) : s;
 }
 
+function getCombatActionTypeFromRole(role) {
+  if (role === 'combat_attack') return 'attack';
+  if (role === 'combat_defend') return 'defend';
+  if (role === 'combat_skill') return 'skill';
+  return null;
+}
+
 export function handleAction(idx) {
-  withInputLock(() => {
+  return withInputLock(async () => {
     ensureActionUsageDaySync();
 
-    // Sala de Game Over: somente botão 4 reinicia a run
     if (isGameOverRoom(STATE.currentRoomId)) {
       if (idx === 3) {
         restartRun();
@@ -524,60 +744,88 @@ export function handleAction(idx) {
     if (!action) return;
 
     const role = action.role || 'act';
-
-    // [CHANGE] label base para log: preferir i18n; fallback remove sufixo do botão
     const eventLabel = action.labelKey
       ? t(action.labelKey, '')
       : _stripButtonSuffix(getActionLabel(idx));
-    const applyStatusAndGetRealDelta = (key, delta) => {
-      if (typeof key !== 'string' || !Number.isFinite(delta)) return 0;
-      const before = getEffectiveStatus(key);
-      PlayerAPI.addStatus(key, delta);
-      const after = getEffectiveStatus(key);
-      return Math.trunc(after - before);
-    };
 
     if (role === 'act' && isActionUsedToday(STATE.currentRoomId, idx)) {
-      return; // 1x/dia por ação 'act'
+      return;
     }
     if (role === 'act') {
       markActionUsedToday(STATE.currentRoomId, idx);
     }
 
-    // 1) Executa efeitos declarados e coleta mensagens
     const effectMsgs = [];
 
     if (role === 'flee') {
+      if (!canPayCombatActionCost('flee')) return;
       const fleeEnergyDelta = applyStatusAndGetRealDelta('energia', -FLEE_ENERGY_COST);
       const fleeSanityDelta = applyStatusAndGetRealDelta('sanidade', -FLEE_SANITY_COST);
-      if (fleeEnergyDelta !== 0) effectMsgs.push(`${fleeEnergyDelta >= 0 ? '+' : ''}${fleeEnergyDelta} Energia`);
-      if (fleeSanityDelta !== 0) effectMsgs.push(`${fleeSanityDelta >= 0 ? '+' : ''}${fleeSanityDelta} Sanidade`);
+      if (fleeEnergyDelta !== 0) effectMsgs.push(formatStatusDeltaMessage('Energia', fleeEnergyDelta));
+      if (fleeSanityDelta !== 0) effectMsgs.push(formatStatusDeltaMessage('Sanidade', fleeSanityDelta));
 
       const success = nextRandom() < FLEE_SUCCESS_CHANCE;
       if (success) {
-        STATE.nextRoomEmptyChanceRealBoost = true;
-        addDay(1);
-        setRunlineDay(getDay());
-        resetActionUsageForToday();
-        clearCombatEnemy();
-        STATE.currentRoomId = pickNextRoomId();
-        effectMsgs.push(t('combat.flee_success', 'Fuga bem-sucedida'));
-        renderRoom();
+        const summaryMsgs = [t('combat.flee_success', 'Fuga bem-sucedida')];
+        moveToNextRoomAfterCombat(summaryMsgs);
+        appendActionLogSections(eventLabel, [effectMsgs, summaryMsgs]);
+        renderHUD();
+        renderLog(getLogLastNTexts(4));
+        return;
       } else {
         effectMsgs.push(t('combat.flee_fail', 'Fuga falhou'));
-        const combatStep = queueCombatPlayerAction('flee_failed');
-        if (!combatStep.ok) return;
+        appendActionLog(eventLabel, effectMsgs);
+        renderHUD();
+        renderLog(getLogLastNTexts(4));
+        const enemyPhaseResolved = await resolveCombatEnemyPhaseWithDelay();
+        if (enemyPhaseResolved && checkGameOver()) {
+          renderHUD();
+          renderLog(getLogLastNTexts(4));
+          return;
+        }
+        renderHUD();
+        renderLog(getLogLastNTexts(4));
+        return;
       }
-    } else if (role === 'combat_attack') {
-      const combatStep = queueCombatPlayerAction('attack');
-      if (!combatStep.ok) return;
-      effectMsgs.push(...combatStep.playerMsgs);
     } else {
-      effectMsgs.push(...runEffectsCollectMessages(action.effects || []));
+      const combatActionType = getCombatActionTypeFromRole(role);
+      if (combatActionType) {
+        if (!canPayCombatActionCost(role)) return;
+        const primaryMsgs = [];
+        if (role === 'combat_attack') {
+          const energyDelta = applyStatusAndGetRealDelta('energia', -COMBAT_ATTACK_ENERGY_COST);
+          if (energyDelta !== 0) primaryMsgs.push(formatStatusDeltaMessage('Energia', energyDelta));
+        } else if (role === 'combat_defend') {
+          const energyDelta = applyStatusAndGetRealDelta('energia', -COMBAT_DEFEND_ENERGY_COST);
+          if (energyDelta !== 0) primaryMsgs.push(formatStatusDeltaMessage('Energia', energyDelta));
+        }
+        const combatStep = queueCombatPlayerAction(combatActionType);
+        if (!combatStep.ok) return;
+        primaryMsgs.push(...(Array.isArray(combatStep.playerMsgs) ? combatStep.playerMsgs.slice() : []));
+        const outcomeResolution = resolveCombatOutcome(combatStep.outcome);
+        appendActionLogSections(eventLabel, [primaryMsgs, outcomeResolution.summaryMsgs]);
+        renderHUD();
+        renderLog(getLogLastNTexts(4));
+        if (!outcomeResolution.terminal && !isPlayerCombatTurn()) {
+          const enemyPhaseResolved = await resolveCombatEnemyPhaseWithDelay();
+          if (enemyPhaseResolved && checkGameOver()) {
+            renderHUD();
+            renderLog(getLogLastNTexts(4));
+            return;
+          }
+        }
+        renderHUD();
+        renderLog(getLogLastNTexts(4));
+        return;
+      }
+
+      if (isTrapRoom(STATE.currentRoomId) && role === 'act' && typeof action.trapKind === 'string') {
+        effectMsgs.push(...runTrapAction(action.trapKind, room));
+      } else {
+        effectMsgs.push(...runEffectsCollectMessages(action.effects || []));
+      }
     }
 
-    // Sala armadilha e salas de escolha única: após qualquer 'act', todas as 'act' contam como usadas.
-    // [TODO] Sala armadilha será refinada depois com dano por Vida/Energia/Sanidade escalado por andar.
     if ((isTrapRoom(STATE.currentRoomId) || room.singleChoiceActs) && role === 'act') {
       for (let j = 0; j < 4; j++) {
         const aj = room.actions?.[j];
@@ -587,55 +835,29 @@ export function handleAction(idx) {
       renderRoom();
     }
 
-    // 2) Papel especial: explorar (aplica custo/ganho padrão e transita de sala)
     if (role === 'explore') {
-      // [CHANGE] Custo padrão: -10 energia (sem XP)
-      const exploreEnergyDelta = applyStatusAndGetRealDelta('energia', -10);
+      const exploreEnergyDelta = applyStatusAndGetRealDelta('energia', -EXPLORE_ENERGY_COST);
       if (exploreEnergyDelta !== 0) effectMsgs.push(`${exploreEnergyDelta >= 0 ? '+' : ''}${exploreEnergyDelta} Energia`);
 
-      // Avança o dia, reseta uso de ações
       addDay(1);
       setRunlineDay(getDay());
       resetActionUsageForToday();
 
-      // Sorteio da próxima sala
       clearCombatEnemy();
       STATE.currentRoomId = pickNextRoomId();
-
-      // (sem log de descrição)
       renderRoom();
     }
 
-    // 3) Checa Game Over (energia 0) após aplicar efeitos/custos
-    if (checkGameOverByEnergy()) {
+    if (checkGameOver()) {
       renderHUD();
-      // **Sempre** loga o evento; efeitos se houver.
-      if (eventLabel) {
-        const tail = effectMsgs.length ? ` ${effectMsgs.join(', ')}` : '';
-        appendLog({ sev: 'mod', msg: `${String(eventLabel)}:${tail}`, ctx: { day: getDay() } });
-      }
+      appendActionLog(eventLabel, effectMsgs);
       renderLog(getLogLastNTexts(4));
       return;
     }
 
-    // 4) Atualiza HUD e Log (**sempre** loga o evento)
     renderHUD();
-    if (eventLabel) {
-      const tail = effectMsgs.length ? ` ${effectMsgs.join(', ')}` : '';
-      appendLog({ sev: 'mod', msg: `${String(eventLabel)}:${tail}`, ctx: { day: getDay() } });
-    }
-
-    if (role === 'combat_attack' || (role === 'flee' && effectMsgs.includes(t('combat.flee_fail', 'Fuga falhou')))) {
-      const enemyStep = resolvePendingEnemyTurn();
-      if (enemyStep.ok) {
-        for (const msg of enemyStep.enemyLogs) {
-          appendLog({ sev: 'combat', msg, ctx: { day: getDay() } });
-        }
-        renderRoom();
-      }
-    }
-
+    appendActionLog(eventLabel, effectMsgs);
     renderLog(getLogLastNTexts(4));
   });
 }
-/* =====================[ FIM TRECHO 7 ]===================== */
+/* =====================[ FIM TRECHO 8 ]===================== */
