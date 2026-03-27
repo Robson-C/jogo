@@ -13,8 +13,9 @@
  *   - player.level inicia em 1 e vai até 99.
  *   - XP por nível usa curva quadrática leve própria para cap 99.
  *   - XP continua sendo total acumulado.
- *   - Cada nível ganho concede +2 pontos de atributo livres (ocultos por enquanto).
- *   - Backend expõe custo escalonado por atributo para a futura tela de distribuição.
+ *   - Cada nível ganho concede +2 pontos de atributo livres.
+ *   - Cada nível ganho concede +1 ponto de status livre (Vida/Energia/Mana/Sanidade).
+ *   - Backend expõe custo escalonado por atributo e alocação fixa de status (+10 por ponto).
  * - [NEW] Flag volátil de sessão `bootInitLogged` para evitar relogar as mensagens iniciais.
  */
 export const VERSION = '0.8.2-floor-boss-progression';
@@ -79,8 +80,10 @@ export const STATE = {
     // Progressão
     level: 1,                 // nível atual (1..99)
     xp: 0,                    // total acumulado
-    pontosAtributoLivres: 0,  // +2 por nível acima do 1; oculto na UI por enquanto
-    pontosAtributoGastos: 0,  // reservado para a futura tela de distribuição
+    pontosAtributoLivres: 0,  // +2 por nível acima do 1.
+    pontosAtributoGastos: 0,
+    pontosStatusLivres: 0,    // +1 por nível acima do 1.
+    pontosStatusGastos: 0,
     activeCombatSkillId: '',
     activeCombatSkillName: ''
   },
@@ -205,10 +208,14 @@ const ATRIB_KEYS  = ['ataque', 'defesa', 'precisao', 'agilidade'];
 const XP_KEY = 'xp';
 const ATTR_FREE_KEY = 'pontosAtributoLivres';
 const ATTR_SPENT_KEY = 'pontosAtributoGastos';
+const STATUS_FREE_KEY = 'pontosStatusLivres';
+const STATUS_SPENT_KEY = 'pontosStatusGastos';
 
 const LEVEL_MIN = 1;
 const LEVEL_MAX = 99;
 const ATTRIBUTE_POINTS_PER_LEVEL = 2;
+const STATUS_POINTS_PER_LEVEL = 1;
+const STATUS_POINT_BONUS = 10;
 const ATTRIBUTE_MAX = 99;
 const FLOOR_MIN = 1;
 const FLOOR_MAX = 50;
@@ -344,6 +351,11 @@ export function getEarnedAttributePointsForLevel(lv) {
   const level = Math.max(LEVEL_MIN, Math.min(LEVEL_MAX, Math.floor(Number(lv) || LEVEL_MIN)));
   return Math.max(0, (level - LEVEL_MIN) * ATTRIBUTE_POINTS_PER_LEVEL);
 }
+/** [DOC] Total de pontos de status ganhos até `lv` (nível 1 = 0). */
+export function getEarnedStatusPointsForLevel(lv) {
+  const level = Math.max(LEVEL_MIN, Math.min(LEVEL_MAX, Math.floor(Number(lv) || LEVEL_MIN)));
+  return Math.max(0, (level - LEVEL_MIN) * STATUS_POINTS_PER_LEVEL);
+}
 /** [DOC] Custo para subir +1 no atributo, conforme o valor base atual dele.
  * Faixas atuais para frear explosão cedo: 0..7=1 / 8..10=2 / 11..13=3 / 14..16=4 / 17+=5. */
 export function getAttributeUpgradeCost(currentValue) {
@@ -420,6 +432,50 @@ export function applyAttributeAllocation(plan) {
     freeAfter: Math.max(0, freeBefore - totalCost)
   };
 }
+/** [DOC] Aplica uma distribuição de status em lote (+10 no máximo e +10 no atual por ponto). */
+export function applyStatusAllocation(plan) {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    return { ok: false, reason: 'invalid_plan', applied: null, spentCost: 0, freeBefore: getFreeStatusPoints(), freeAfter: getFreeStatusPoints() };
+  }
+
+  const normalized = {};
+  let requestedTotal = 0;
+  for (let i = 0; i < STATUS_KEYS.length; i++) {
+    const key = STATUS_KEYS[i];
+    const amount = Math.max(0, Math.floor(Number(plan[key]) || 0));
+    normalized[key] = amount;
+    requestedTotal += amount;
+  }
+
+  const freeBefore = getFreeStatusPoints();
+  if (requestedTotal <= 0) {
+    return { ok: false, reason: 'empty_plan', applied: { ...normalized }, spentCost: 0, freeBefore, freeAfter: freeBefore };
+  }
+  if (freeBefore < requestedTotal) {
+    return { ok: false, reason: 'insufficient_points', applied: null, spentCost: requestedTotal, freeBefore, freeAfter: freeBefore };
+  }
+
+  for (let i = 0; i < STATUS_KEYS.length; i++) {
+    const key = STATUS_KEYS[i];
+    const amount = normalized[key];
+    if (amount <= 0) continue;
+    const delta = amount * STATUS_POINT_BONUS;
+    addStatusMax(key, delta);
+    addPlayerValue(key, delta);
+  }
+
+  const spentBefore = Math.max(0, Math.floor(Number(STATE.player[STATUS_SPENT_KEY]) || 0));
+  STATE.player[STATUS_SPENT_KEY] = spentBefore + requestedTotal;
+  STATE.player[STATUS_FREE_KEY] = Math.max(0, freeBefore - requestedTotal);
+
+  return {
+    ok: true,
+    applied: { ...normalized },
+    spentCost: requestedTotal,
+    freeBefore,
+    freeAfter: Math.max(0, freeBefore - requestedTotal)
+  };
+}
 /** [DOC] Recalcula e aplica o nível correto com base em STATE.player.xp (suporta ganho/perda). */
 function recalcLevelFromTotalXP() {
   let total = STATE.player.xp;
@@ -433,14 +489,19 @@ function recalcLevelFromTotalXP() {
     else break;
   }
 
-  const earnedPoints = getEarnedAttributePointsForLevel(lv);
-  const spentPoints = Math.max(0, Math.floor(Number(STATE.player[ATTR_SPENT_KEY]) || 0));
-  const freePoints = Math.max(0, earnedPoints - spentPoints);
+  const earnedAttrPoints = getEarnedAttributePointsForLevel(lv);
+  const spentAttrPoints = Math.max(0, Math.floor(Number(STATE.player[ATTR_SPENT_KEY]) || 0));
+  const freeAttrPoints = Math.max(0, earnedAttrPoints - spentAttrPoints);
+  const earnedStatusPoints = getEarnedStatusPointsForLevel(lv);
+  const spentStatusPoints = Math.max(0, Math.floor(Number(STATE.player[STATUS_SPENT_KEY]) || 0));
+  const freeStatusPoints = Math.max(0, earnedStatusPoints - spentStatusPoints);
 
   STATE.player.level = lv;
   STATE.player.xp = total;
-  STATE.player[ATTR_SPENT_KEY] = spentPoints;
-  STATE.player[ATTR_FREE_KEY] = freePoints;
+  STATE.player[ATTR_SPENT_KEY] = spentAttrPoints;
+  STATE.player[ATTR_FREE_KEY] = freeAttrPoints;
+  STATE.player[STATUS_SPENT_KEY] = spentStatusPoints;
+  STATE.player[STATUS_FREE_KEY] = freeStatusPoints;
 }
 /** [DOC] Snapshot do progresso dentro do nível atual. */
 export function getXPProgress() {
@@ -457,6 +518,9 @@ export function isMaxLevel() { return getLevel() >= LEVEL_MAX; }
 export function getXPForNextLevel() { return xpNeededFor(getLevel()); }
 export function getFreeAttributePoints() {
   return Math.max(0, Math.floor(Number(STATE.player[ATTR_FREE_KEY]) || 0));
+}
+export function getFreeStatusPoints() {
+  return Math.max(0, Math.floor(Number(STATE.player[STATUS_FREE_KEY]) || 0));
 }
 /* =====================[ FIM TRECHO 4 ]===================== */
 
@@ -477,7 +541,7 @@ export function setPlayerValue(key, value) {
     STATE.player[key] = Math.max(0, Math.min(ATTRIBUTE_MAX, Math.floor(Number(value) || 0)));
     return true;
   }
-  if (key === XP_KEY || key === ATTR_FREE_KEY || key === ATTR_SPENT_KEY) {
+  if (key === XP_KEY || key === ATTR_FREE_KEY || key === ATTR_SPENT_KEY || key === STATUS_FREE_KEY || key === STATUS_SPENT_KEY) {
     STATE.player[key] = value;
     return true;
   }
@@ -497,7 +561,7 @@ export function addPlayerValue(key, delta) {
     STATE.player[key] = Math.max(0, Math.min(ATTRIBUTE_MAX, cur + delta));
     return true;
   }
-  if (key === XP_KEY || key === ATTR_FREE_KEY || key === ATTR_SPENT_KEY) {
+  if (key === XP_KEY || key === ATTR_FREE_KEY || key === ATTR_SPENT_KEY || key === STATUS_FREE_KEY || key === STATUS_SPENT_KEY) {
     const cur = isFiniteNumber(STATE.player[key]) ? STATE.player[key] : 0;
     STATE.player[key] = cur + delta;
     return true;
@@ -550,6 +614,7 @@ export const PlayerAPI = {
     return true;
   },
   getPontosAtributoLivres: () => getFreeAttributePoints(),
+  getPontosStatusLivres: () => getFreeStatusPoints(),
   getCustoAtributo: (k) => getAtributoUpgradeCost(k),
   trySpendAttributePointsOn: (k) => {
     if (!ATRIB_KEYS.includes(k)) return false;
@@ -563,7 +628,8 @@ export const PlayerAPI = {
     STATE.player[ATTR_SPENT_KEY] = Math.max(0, Math.floor(Number(STATE.player[ATTR_SPENT_KEY]) || 0)) + cost;
     return true;
   },
-  applyAttributeAllocation: (plan) => applyAttributeAllocation(plan)
+  applyAttributeAllocation: (plan) => applyAttributeAllocation(plan),
+  applyStatusAllocation: (plan) => applyStatusAllocation(plan)
 };
 /* =====================[ FIM TRECHO 5 ]===================== */
 
@@ -698,7 +764,8 @@ export function getEffectivePlayerSnapshot() {
     xpProgress:  xpView.progress,   // progresso dentro do nível
     xpNeeded:    xpView.needed,     // requisito do nível atual
     atMaxLevel:  xpView.atMaxLevel,
-    pontosAtributoLivres: getFreeAttributePoints()
+    pontosAtributoLivres: getFreeAttributePoints(),
+    pontosStatusLivres: getFreeStatusPoints()
   };
 }
 /* =====================[ FIM TRECHO 7 ]===================== */
@@ -770,7 +837,7 @@ export function addCurrentFloor(delta = 1) {
  * - Define valores iniciais de runtime (sem persistência) para o jogador:
  *   Status (Vida/Mana/Energia/Sanidade): max = 100; atual = max.
  *   Atributos (ATK/DEF/ACC/AGI): 5.
- *   Progressão: level=1; xp=0; pontosAtributoLivres=0; pontosAtributoGastos=0.
+ *   Progressão: level=1; xp=0; pontosAtributoLivres=0; pontosAtributoGastos=0; pontosStatusLivres=0; pontosStatusGastos=0.
  * [WHY] Garante HUD coerente desde o boot e permite ver o consumo de Energia ao explorar.
  */
 export function initPlayerDefaults() {
@@ -794,6 +861,8 @@ export function initPlayerDefaults() {
   STATE.player.xp = 0;
   STATE.player.pontosAtributoLivres = 0;
   STATE.player.pontosAtributoGastos = 0;
+  STATE.player.pontosStatusLivres = 0;
+  STATE.player.pontosStatusGastos = 0;
   STATE.player.activeCombatSkillId = '';
   STATE.player.activeCombatSkillName = '';
   STATE.currentFloor = 1;

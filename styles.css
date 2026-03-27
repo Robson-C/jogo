@@ -350,6 +350,37 @@ body{
 .stats-grid .stat-card[data-stat="mana"]    .stat-name::before{ content: "💧"; }
 .stats-grid .stat-card[data-stat="energia"] .stat-name::before{ content: "⚡"; }
 .stats-grid .stat-card[data-stat="sanidade"] .stat-name::before{ content: "🧠"; }
+
+.stat-card[data-can-upgrade="true"]{
+  position: relative;
+  cursor: pointer;
+  border-color: rgba(93, 66, 184, 0.34);
+  box-shadow: 0 0 0 0.12rem rgba(93, 66, 184, 0.12), var(--shadow-soft);
+  animation: chipReadyPulse 1.65s ease-in-out infinite;
+}
+.stat-card[data-can-upgrade="true"]::after{
+  content: "+" attr(data-status-points);
+  position: absolute;
+  right: 0.65rem;
+  top: 0.65rem;
+  min-width: 2rem;
+  height: 1.6rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 0.3rem 0.8rem rgba(93, 66, 184, 0.22);
+}
+.stat-card:focus-visible{
+  outline: 0.2rem solid rgba(93, 66, 184, 0.35);
+  outline-offset: 0.2rem;
+}
 /* =====================[ FIM TRECHO 5 ]===================== */
 
 /* =====================[ TRECHO 6: STATUS DO JOGADOR (4 ÍCONES EM EMOJI) ]===================== */
@@ -955,6 +986,9 @@ body.no-scroll {
   width: min(92vw, 32rem);
   height: auto;
   max-height: 78vh;
+}
+.modal-dialog--status{
+  width: min(92vw, 34rem);
 }
 .attr-modal__header{
   display:flex;

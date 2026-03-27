@@ -60,6 +60,29 @@ let _attrModal = {
   draft: null
 };
 
+const STATUS_ALLOC_KEYS = ['vida', 'energia', 'mana', 'sanidade'];
+const STATUS_LABELS = { vida: 'Vida', energia: 'Energia', mana: 'Mana', sanidade: 'Sanidade' };
+const STATUS_DESCRIPTIONS = {
+  vida: 'Aumenta Vida máxima e recupera +10 de Vida atual por ponto.',
+  energia: 'Aumenta Energia máxima e recupera +10 de Energia atual por ponto.',
+  mana: 'Aumenta Mana máxima e recupera +10 de Mana atual por ponto.',
+  sanidade: 'Aumenta Sanidade máxima e recupera +10 de Sanidade atual por ponto.'
+};
+const STATUS_MAX_MAP = { vida: 'maxVida', energia: 'maxEnergia', mana: 'maxMana', sanidade: 'maxSanidade' };
+
+let _statusModal = {
+  bound: false,
+  overlay: null,
+  dialog: null,
+  body: null,
+  points: null,
+  cancelBtn: null,
+  applyBtn: null,
+  prevFocus: null,
+  base: null,
+  draft: null
+};
+
 /* ---------------------- [STATE-UI] Log compacto: auto-fit 4→3→2→1 ---------------------- */
 let _lastLogStrings = [];
 let _fitRAF = 0;
@@ -90,6 +113,7 @@ export function initUI() {
   // Modal de histórico
   _bindLogModalHandlers();
   _bindAttrModalHandlers();
+  _bindStatusModalHandlers();
 
   // Re-ajuste responsivo do log compacto
   window.addEventListener('resize', () => {
@@ -305,6 +329,7 @@ export function renderHUD() {
   _updateLevel(snap.level, snap.pontosAtributoLivres);
   _updateXP(snap.xpProgress, snap.xpNeeded, !!snap.atMaxLevel);
   _updateAttributeUpgradeAvailability(snap.pontosAtributoLivres);
+  _updateStatusUpgradeAvailability(snap.pontosStatusLivres);
 }
 
 function _updateStatBar(statKey, cur, max) {
@@ -368,6 +393,24 @@ function _updateAttributeUpgradeAvailability(freePoints) {
     chip.setAttribute('data-can-upgrade', safeFree > 0 ? 'true' : 'false');
     chip.setAttribute('title', safeFree > 0 ? `${label}: ${desc} Toque para distribuir pontos.` : `${label}: ${desc}`);
     chip.setAttribute('aria-label', safeFree > 0 ? `${label}. ${desc} Você tem ${safeFree} pontos de atributo livres.` : `${label}. ${desc}`);
+  }
+}
+function _updateStatusUpgradeAvailability(freePoints) {
+  const safeFree = Math.max(0, Math.floor(Number(freePoints) || 0));
+  const cards = document.querySelectorAll('.stats-grid .stat-card');
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+    const key = String(card.getAttribute('data-stat') || '');
+    if (!STATUS_ALLOC_KEYS.includes(key)) continue;
+    const label = STATUS_LABELS[key] || 'Status';
+    const desc = STATUS_DESCRIPTIONS[key] || '';
+    const canUpgrade = safeFree > 0;
+    card.setAttribute('data-can-upgrade', canUpgrade ? 'true' : 'false');
+    card.setAttribute('data-status-points', canUpgrade ? String(safeFree) : '');
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', canUpgrade ? '0' : '-1');
+    card.setAttribute('title', canUpgrade ? `${label}: ${desc} Toque para distribuir pontos.` : `${label}: ${desc}`);
+    card.setAttribute('aria-label', canUpgrade ? `${label}. ${desc} Você tem ${safeFree} pontos de status livres.` : `${label}. ${desc}`);
   }
 }
 function _updateXP(progress, needed, atMax) {
@@ -804,3 +847,213 @@ function _bindAttrModalHandlers() {
   _attrModal.bound = true;
 }
 /* =====================[ FIM TRECHO 4 ]===================== */
+
+/* =====================[ TRECHO 5: ui.js - Modal de Status ]===================== */
+function _ensureStatusModalEls() {
+  if (!_statusModal.overlay)   _statusModal.overlay   = document.getElementById('status-modal');
+  if (!_statusModal.dialog)    _statusModal.dialog    = _statusModal.overlay ? _statusModal.overlay.querySelector('.modal-dialog--status') : null;
+  if (!_statusModal.body)      _statusModal.body      = _statusModal.overlay ? _statusModal.overlay.querySelector('#status-modal-body') : null;
+  if (!_statusModal.points)    _statusModal.points    = _statusModal.overlay ? _statusModal.overlay.querySelector('#status-modal-points') : null;
+  if (!_statusModal.cancelBtn) _statusModal.cancelBtn = _statusModal.overlay ? _statusModal.overlay.querySelector('#status-modal-cancel') : null;
+  if (!_statusModal.applyBtn)  _statusModal.applyBtn  = _statusModal.overlay ? _statusModal.overlay.querySelector('#status-modal-apply') : null;
+}
+
+function _resetStatusDraft() {
+  const base = getPlayerSnapshot();
+  _statusModal.base = {};
+  for (let i = 0; i < STATUS_ALLOC_KEYS.length; i++) {
+    const key = STATUS_ALLOC_KEYS[i];
+    const maxKey = STATUS_MAX_MAP[key];
+    _statusModal.base[key] = {
+      cur: Math.max(0, Math.floor(Number(base[key]) || 0)),
+      max: Math.max(0, Math.floor(Number(base[maxKey]) || 0))
+    };
+  }
+  _statusModal.draft = { vida: 0, energia: 0, mana: 0, sanidade: 0 };
+}
+
+function _getStatusDraftSpent() {
+  if (!_statusModal.draft) return 0;
+  let total = 0;
+  for (let i = 0; i < STATUS_ALLOC_KEYS.length; i++) {
+    total += Math.max(0, Math.floor(Number(_statusModal.draft[STATUS_ALLOC_KEYS[i]]) || 0));
+  }
+  return total;
+}
+
+function _getStatusDraftRemaining() {
+  const snap = getEffectivePlayerSnapshot();
+  const free = Math.max(0, Math.floor(Number(snap.pontosStatusLivres) || 0));
+  return Math.max(0, free - _getStatusDraftSpent());
+}
+
+function _renderStatusModal() {
+  _ensureStatusModalEls();
+  if (!_statusModal.overlay || !_statusModal.body) return;
+  const pointsLeft = _getStatusDraftRemaining();
+  if (_statusModal.points) _statusModal.points.textContent = String(pointsLeft);
+
+  const rows = _statusModal.body.querySelectorAll('.attr-row');
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const key = String(row.getAttribute('data-status') || '');
+    if (!STATUS_ALLOC_KEYS.includes(key)) continue;
+    const base = _statusModal.base ? _statusModal.base[key] : { cur: 0, max: 0 };
+    const draft = _statusModal.draft ? Math.max(0, Math.floor(Number(_statusModal.draft[key]) || 0)) : 0;
+    const valueEl = row.querySelector('[data-role="value"]');
+    const costEl = row.querySelector('[data-role="cost"]');
+    const descEl = row.querySelector('[data-role="desc"]');
+    const minusBtn = row.querySelector('[data-action="minus"]');
+    const plusBtn = row.querySelector('[data-action="plus"]');
+    const curPreview = base.cur + (draft * 10);
+    const maxPreview = base.max + (draft * 10);
+
+    if (valueEl) {
+      valueEl.textContent = draft > 0 ? `${base.cur}/${base.max} → ${curPreview}/${maxPreview}` : `${base.cur}/${base.max}`;
+    }
+    if (descEl) descEl.textContent = STATUS_DESCRIPTIONS[key] || '';
+    if (costEl) costEl.textContent = '+10';
+    if (minusBtn) minusBtn.disabled = draft <= 0;
+    if (plusBtn) plusBtn.disabled = _getStatusDraftRemaining() <= 0;
+  }
+
+  if (_statusModal.applyBtn) _statusModal.applyBtn.disabled = !(_getStatusDraftSpent() > 0);
+}
+
+function _openStatusModal() {
+  const snap = getEffectivePlayerSnapshot();
+  const free = Math.max(0, Math.floor(Number(snap.pontosStatusLivres) || 0));
+  if (free <= 0) return;
+
+  _ensureStatusModalEls();
+  if (!_statusModal.overlay) return;
+
+  try { _statusModal.overlay.removeAttribute('inert'); } catch (_) {}
+  _resetStatusDraft();
+  _renderStatusModal();
+
+  _statusModal.prevFocus = document.activeElement || null;
+  document.body.classList.add('no-scroll');
+  _statusModal.overlay.removeAttribute('hidden');
+  _statusModal.overlay.setAttribute('aria-hidden', 'false');
+
+  try { if (_statusModal.body) _statusModal.body.focus(); } catch (_) {}
+  document.addEventListener('keydown', _onEscCloseStatus, { passive: true });
+}
+
+function _closeStatusModal() {
+  _ensureStatusModalEls();
+  if (!_statusModal.overlay) return;
+
+  try {
+    const active = document.activeElement;
+    if (active && _statusModal.overlay.contains(active)) {
+      try { active.blur(); } catch (_) {}
+      let restored = false;
+      if (_statusModal.prevFocus && typeof _statusModal.prevFocus.focus === 'function') {
+        try {
+          if (!_statusModal.overlay.contains(_statusModal.prevFocus)) {
+            _statusModal.prevFocus.focus();
+            restored = true;
+          }
+        } catch (_) {}
+      }
+      if (!restored) {
+        try { document.body.setAttribute('tabindex', '-1'); document.body.focus(); } catch (_) {}
+        try { document.body.removeAttribute('tabindex'); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+
+  try { _statusModal.overlay.setAttribute('inert', ''); } catch (_) {}
+
+  requestAnimationFrame(() => {
+    try {
+      _statusModal.overlay.setAttribute('aria-hidden', 'true');
+      _statusModal.overlay.setAttribute('hidden', '');
+    } catch (_) {}
+    document.body.classList.remove('no-scroll');
+    _statusModal.prevFocus = null;
+    document.removeEventListener('keydown', _onEscCloseStatus);
+  });
+}
+
+function _stepStatusDraft(key, dir) {
+  if (!STATUS_ALLOC_KEYS.includes(key) || !_statusModal.draft) return;
+  if (dir > 0) {
+    if (_getStatusDraftRemaining() > 0) _statusModal.draft[key] += 1;
+  } else if (dir < 0) {
+    if (_statusModal.draft[key] > 0) _statusModal.draft[key] -= 1;
+  }
+  _renderStatusModal();
+}
+
+function _applyStatusDraft() {
+  if (!_statusModal.draft) return;
+  const plan = {
+    vida: Math.max(0, Math.floor(Number(_statusModal.draft.vida) || 0)),
+    energia: Math.max(0, Math.floor(Number(_statusModal.draft.energia) || 0)),
+    mana: Math.max(0, Math.floor(Number(_statusModal.draft.mana) || 0)),
+    sanidade: Math.max(0, Math.floor(Number(_statusModal.draft.sanidade) || 0))
+  };
+  const res = PlayerAPI.applyStatusAllocation(plan);
+  if (!res || !res.ok) return;
+
+  const parts = [];
+  for (let i = 0; i < STATUS_ALLOC_KEYS.length; i++) {
+    const key = STATUS_ALLOC_KEYS[i];
+    const amount = res.applied && Number(res.applied[key]) ? Math.floor(Number(res.applied[key])) : 0;
+    if (amount > 0) parts.push(`${STATUS_LABELS[key]} +${amount * 10}`);
+  }
+  const msg = parts.length ? `Você distribuiu status: ${parts.join(', ')}.` : 'Você distribuiu status.';
+  appendLog({ sev: 'mod', msg, ctx: { day: getDay() } });
+  renderHUD();
+  renderLog(getLogLastNTexts(4));
+  _closeStatusModal();
+}
+
+function _onEscCloseStatus(e) {
+  if (e && (e.key === 'Escape' || e.key === 'Esc')) _closeStatusModal();
+}
+
+function _bindStatusModalHandlers() {
+  if (_statusModal.bound) return;
+  _ensureStatusModalEls();
+
+  const cards = document.querySelectorAll('.stats-grid .stat-card');
+  for (let i = 0; i < cards.length; i++) {
+    cards[i].addEventListener('click', () => _openStatusModal(), { passive: true });
+    cards[i].addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        _openStatusModal();
+      }
+    });
+  }
+
+  if (_statusModal.body) {
+    _statusModal.body.addEventListener('click', (ev) => {
+      const btn = ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('.attr-step') : null;
+      if (!btn) return;
+      const key = String(btn.getAttribute('data-status') || '');
+      const action = String(btn.getAttribute('data-action') || '');
+      if (action === 'plus') _stepStatusDraft(key, +1);
+      if (action === 'minus') _stepStatusDraft(key, -1);
+    });
+  }
+
+  if (_statusModal.cancelBtn) {
+    _statusModal.cancelBtn.addEventListener('click', () => _closeStatusModal(), { passive: true });
+  }
+  if (_statusModal.applyBtn) {
+    _statusModal.applyBtn.addEventListener('click', () => _applyStatusDraft(), { passive: true });
+  }
+  if (_statusModal.overlay) {
+    _statusModal.overlay.addEventListener('click', (ev) => {
+      if (ev.target === _statusModal.overlay) _closeStatusModal();
+    }, { passive: true });
+  }
+
+  _statusModal.bound = true;
+}
+/* =====================[ FIM TRECHO 5 ]===================== */

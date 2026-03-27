@@ -257,6 +257,80 @@
           </div>
         </div>
       </div>
+      <div class="modal-overlay" id="status-modal" aria-hidden="true" hidden>
+        <div class="modal-dialog modal-dialog--attr modal-dialog--status" role="dialog" aria-modal="true" aria-label="Distribuir status">
+          <div class="attr-modal__header">
+            <div>
+              <div class="attr-modal__title">Distribuir status</div>
+              <div class="attr-modal__note">Cada ponto aumenta o máximo em +10 e recupera +10 do status atual. Você pode guardar para usar como reserva estratégica.</div>
+            </div>
+            <div class="attr-modal__points">Pontos: <strong id="status-modal-points">0</strong></div>
+          </div>
+
+          <div class="modal-body attr-modal__body" id="status-modal-body" tabindex="0" aria-label="Distribuição de status">
+            <div class="attr-row" data-status="vida">
+              <div class="attr-row__meta">
+                <span class="attr-row__icon" aria-hidden="true">❤️</span>
+                <span class="attr-row__meta-text">
+                  <span class="attr-row__label">Vida</span>
+                  <span class="attr-row__desc" data-role="desc">Aumenta Vida máxima e recupera +10 de Vida atual por ponto.</span>
+                </span>
+              </div>
+              <div class="attr-row__value" data-role="value">0/0</div>
+              <div class="attr-row__cost" data-role="cost">+10</div>
+              <button type="button" class="attr-step attr-step--minus" data-action="minus" data-status="vida" aria-label="Diminuir Vida">−</button>
+              <button type="button" class="attr-step attr-step--plus" data-action="plus" data-status="vida" aria-label="Aumentar Vida">+</button>
+            </div>
+
+            <div class="attr-row" data-status="energia">
+              <div class="attr-row__meta">
+                <span class="attr-row__icon" aria-hidden="true">⚡</span>
+                <span class="attr-row__meta-text">
+                  <span class="attr-row__label">Energia</span>
+                  <span class="attr-row__desc" data-role="desc">Aumenta Energia máxima e recupera +10 de Energia atual por ponto.</span>
+                </span>
+              </div>
+              <div class="attr-row__value" data-role="value">0/0</div>
+              <div class="attr-row__cost" data-role="cost">+10</div>
+              <button type="button" class="attr-step attr-step--minus" data-action="minus" data-status="energia" aria-label="Diminuir Energia">−</button>
+              <button type="button" class="attr-step attr-step--plus" data-action="plus" data-status="energia" aria-label="Aumentar Energia">+</button>
+            </div>
+
+            <div class="attr-row" data-status="mana">
+              <div class="attr-row__meta">
+                <span class="attr-row__icon" aria-hidden="true">💧</span>
+                <span class="attr-row__meta-text">
+                  <span class="attr-row__label">Mana</span>
+                  <span class="attr-row__desc" data-role="desc">Aumenta Mana máxima e recupera +10 de Mana atual por ponto.</span>
+                </span>
+              </div>
+              <div class="attr-row__value" data-role="value">0/0</div>
+              <div class="attr-row__cost" data-role="cost">+10</div>
+              <button type="button" class="attr-step attr-step--minus" data-action="minus" data-status="mana" aria-label="Diminuir Mana">−</button>
+              <button type="button" class="attr-step attr-step--plus" data-action="plus" data-status="mana" aria-label="Aumentar Mana">+</button>
+            </div>
+
+            <div class="attr-row" data-status="sanidade">
+              <div class="attr-row__meta">
+                <span class="attr-row__icon" aria-hidden="true">🧠</span>
+                <span class="attr-row__meta-text">
+                  <span class="attr-row__label">Sanidade</span>
+                  <span class="attr-row__desc" data-role="desc">Aumenta Sanidade máxima e recupera +10 de Sanidade atual por ponto.</span>
+                </span>
+              </div>
+              <div class="attr-row__value" data-role="value">0/0</div>
+              <div class="attr-row__cost" data-role="cost">+10</div>
+              <button type="button" class="attr-step attr-step--minus" data-action="minus" data-status="sanidade" aria-label="Diminuir Sanidade">−</button>
+              <button type="button" class="attr-step attr-step--plus" data-action="plus" data-status="sanidade" aria-label="Aumentar Sanidade">+</button>
+            </div>
+          </div>
+
+          <div class="attr-modal__footer">
+            <button type="button" class="attr-modal__btn attr-modal__btn--ghost" id="status-modal-cancel">Cancelar</button>
+            <button type="button" class="attr-modal__btn attr-modal__btn--primary" id="status-modal-apply">Aplicar</button>
+          </div>
+        </div>
+      </div>
       <!-- =====================[ FIM TRECHO 9C ]===================== -->
 
 
