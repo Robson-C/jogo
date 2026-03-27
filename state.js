@@ -13,7 +13,7 @@
  *   - player.level inicia em 1 e vai até 99.
  *   - XP por nível usa curva quadrática leve própria para cap 99.
  *   - XP continua sendo total acumulado.
- *   - Cada nível ganho concede +3 pontos de atributo livres (ocultos por enquanto).
+ *   - Cada nível ganho concede +2 pontos de atributo livres (ocultos por enquanto).
  *   - Backend expõe custo escalonado por atributo para a futura tela de distribuição.
  * - [NEW] Flag volátil de sessão `bootInitLogged` para evitar relogar as mensagens iniciais.
  */
@@ -79,7 +79,7 @@ export const STATE = {
     // Progressão
     level: 1,                 // nível atual (1..99)
     xp: 0,                    // total acumulado
-    pontosAtributoLivres: 0,  // +3 por nível acima do 1; oculto na UI por enquanto
+    pontosAtributoLivres: 0,  // +2 por nível acima do 1; oculto na UI por enquanto
     pontosAtributoGastos: 0,  // reservado para a futura tela de distribuição
     activeCombatSkillId: '',
     activeCombatSkillName: ''
@@ -208,7 +208,7 @@ const ATTR_SPENT_KEY = 'pontosAtributoGastos';
 
 const LEVEL_MIN = 1;
 const LEVEL_MAX = 99;
-const ATTRIBUTE_POINTS_PER_LEVEL = 3;
+const ATTRIBUTE_POINTS_PER_LEVEL = 2;
 const ATTRIBUTE_MAX = 99;
 const FLOOR_MIN = 1;
 const FLOOR_MAX = 50;
@@ -344,13 +344,14 @@ export function getEarnedAttributePointsForLevel(lv) {
   const level = Math.max(LEVEL_MIN, Math.min(LEVEL_MAX, Math.floor(Number(lv) || LEVEL_MIN)));
   return Math.max(0, (level - LEVEL_MIN) * ATTRIBUTE_POINTS_PER_LEVEL);
 }
-/** [DOC] Custo para subir +1 no atributo, conforme o valor base atual dele. */
+/** [DOC] Custo para subir +1 no atributo, conforme o valor base atual dele.
+ * Faixas atuais para frear explosão cedo: 0..7=1 / 8..10=2 / 11..13=3 / 14..16=4 / 17+=5. */
 export function getAttributeUpgradeCost(currentValue) {
   const value = Math.max(0, Math.floor(Number(currentValue) || 0));
-  if (value >= 80) return 5;
-  if (value >= 60) return 4;
-  if (value >= 40) return 3;
-  if (value >= 20) return 2;
+  if (value >= 17) return 5;
+  if (value >= 14) return 4;
+  if (value >= 11) return 3;
+  if (value >= 8) return 2;
   return 1;
 }
 /** [DOC] Custo atual para evoluir o atributo BASE informado. */

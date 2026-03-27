@@ -55,6 +55,35 @@ function cloneEnemyInstance(definition) {
   };
 }
 
+function getFloorStepWithinChapter(rawFloor) {
+  const floor = clampFloor(rawFloor);
+  return (floor - 1) % 10;
+}
+
+function applyNormalEnemyFloorScaling(definition, rawFloor) {
+  if (!definition || definition.tipo !== ENEMY_KIND.NORMAL) return cloneEnemyInstance(definition);
+
+  const step = getFloorStepWithinChapter(rawFloor);
+  if (step <= 0) return cloneEnemyInstance(definition);
+
+  const scaledMaxVida = Math.max(1, definition.maxVida + (step * 3));
+  const scaledForca = Math.max(0, definition.forca + step);
+  const scaledDefesa = Math.max(0, definition.defesa + step);
+  const scaledPrecisao = Math.max(0, definition.precisao + step);
+  const scaledAgilidade = Math.max(0, definition.agilidade + step);
+
+  return {
+    ...definition,
+    vida: scaledMaxVida,
+    maxVida: scaledMaxVida,
+    forca: scaledForca,
+    ataque: scaledForca,
+    defesa: scaledDefesa,
+    precisao: scaledPrecisao,
+    agilidade: scaledAgilidade
+  };
+}
+
 function clampFloor(rawFloor) {
   const n = Math.floor(Number(rawFloor) || 1);
   if (n < 1) return 1;
@@ -627,8 +656,19 @@ export function getEnemyDefinition(ref) {
   return null;
 }
 
-export function createEnemyInstance(ref) {
-  return cloneEnemyInstance(getEnemyDefinition(ref));
+export function createEnemyInstance(ref, options = null) {
+  const definition = getEnemyDefinition(ref);
+  if (!definition) return null;
+
+  const floor = options && Number.isFinite(Number(options.floor))
+    ? clampFloor(options.floor)
+    : null;
+
+  if (floor != null && definition.tipo === ENEMY_KIND.NORMAL) {
+    return applyNormalEnemyFloorScaling(definition, floor);
+  }
+
+  return cloneEnemyInstance(definition);
 }
 
 export function getEnemyPoolForFloor(rawFloor) {
@@ -637,10 +677,11 @@ export function getEnemyPoolForFloor(rawFloor) {
 }
 
 export function pickEnemyForFloor(rawFloor, rng = Math.random) {
-  const pool = getEnemyPoolForFloor(rawFloor);
+  const floor = clampFloor(rawFloor);
+  const pool = getEnemyPoolForFloor(floor);
   const picked = pickWeightedEntry(pool, rng);
   if (!picked) return null;
-  return createEnemyInstance(picked.enemyId || picked.enemy);
+  return createEnemyInstance(picked.enemyId || picked.enemy, { floor });
 }
 
 export function getBossForFloor(rawFloor) {

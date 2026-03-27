@@ -5,8 +5,8 @@
  * Reaplica i18n e re-renderiza sala/HUD quando o idioma muda.
  */
 import { initI18n, onLocaleChange, applyI18nToDOM, t } from './i18n.js';
-import { STATE, initSeed, getDay, initPlayerDefaults, appendLog, getLogLastNTexts } from './state.js'; // [CHANGE]
-import { initUI, bindActions, setRunlineDay, renderHUD, renderLog } from './ui.js'; // [CHANGE]
+import { STATE, initSeed, getDay, getCurrentFloor, initPlayerDefaults, appendLog, getLogLastNTexts } from './state.js'; // [CHANGE]
+import { initUI, bindActions, setRunlineDay, setRunlineFloor, renderHUD, renderLog } from './ui.js'; // [CHANGE]
 import { initScenePanel } from './scene_panel.js';
 import { handleAction, renderRoom } from './engine.js';
 
@@ -18,8 +18,9 @@ function boot() {
   initUI();
   initScenePanel();
 
-  // Exibe o status do dia na runline
+  // Exibe o status atual da runline
   setRunlineDay(getDay());
+  setRunlineFloor(getCurrentFloor());
 
   // [NEW][WHY] Mensagens iniciais de ambientação — logadas apenas 1x por sessão
   try {

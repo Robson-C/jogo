@@ -396,15 +396,19 @@ function _updateXP(progress, needed, atMax) {
 /* =====================[ FIM TRECHO 1 ]===================== */
 
 
-/* =====================[ TRECHO 2: ui.js - Runline (Dia) ]===================== */
+/* =====================[ TRECHO 2: ui.js - Runline (Dia e Andar) ]===================== */
 /**
- * [DOC] Atualiza o texto do "Dia" na runline com segurança (textContent).
- * Pesquisa preguiçosa do elemento.
+ * [DOC] Atualiza o texto do "Dia" e do "Andar" na runline com segurança (textContent).
+ * Pesquisa preguiçosa dos elementos.
  */
 let _runlineDayEl = null;
+let _runlineFloorEl = null;
 function _ensureRunlineEls() {
   if (!_runlineDayEl) {
     _runlineDayEl = document.querySelector('.runline .runline-day');
+  }
+  if (!_runlineFloorEl) {
+    _runlineFloorEl = document.querySelector('.runline .runline-floor');
   }
 }
 
@@ -414,6 +418,14 @@ export function setRunlineDay(n) {
   if (!_runlineDayEl) return;
   const num = Math.max(1, Math.floor(Number(n) || 1));
   _runlineDayEl.textContent = 'Dia ' + num;
+}
+
+/** Exibe "Andar <n>" (n mínimo 1) */
+export function setRunlineFloor(n) {
+  _ensureRunlineEls();
+  if (!_runlineFloorEl) return;
+  const num = Math.max(1, Math.floor(Number(n) || 1));
+  _runlineFloorEl.textContent = 'Andar ' + num;
 }
 /* =====================[ FIM TRECHO 2 ]===================== */
 

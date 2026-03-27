@@ -16,7 +16,7 @@ import {
   getEffectiveStatus, getEffectiveStatusMax, getEffectiveAtributo, getActiveCombatSkill,
   getCurrentFloor, setCurrentFloor
 } from './state.js';
-import { setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, renderHUD } from './ui.js';
+import { setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, setRunlineFloor, renderHUD } from './ui.js';
 import { showRoomPanel, showEnemyPanel } from './scene_panel.js';
 import { ROOMS, ROOM_IDS } from './rooms.js';
 import { t } from './i18n.js';
@@ -292,6 +292,7 @@ function restartRun() {
   clearCombatEnemy();
   STATE.currentRoomId = 'sala_vazia';
   setRunlineDay(getDay());
+  setRunlineFloor(getCurrentFloor());
   renderRoom();
   renderHUD();
 }
@@ -602,6 +603,7 @@ function pickNextRoomId(options = {}) {
 }
 
 export function renderRoom() {
+  setRunlineFloor(getCurrentFloor());
   const room = ROOMS[STATE.currentRoomId] || ROOMS['sala_vazia'];
   const trap = isTrapRoom(STATE.currentRoomId);
   const combat = isCombatRoom(STATE.currentRoomId);
