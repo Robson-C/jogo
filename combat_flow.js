@@ -36,6 +36,26 @@ function getDamageRollMultiplier() {
   return 0.8 + (nextRandom() * 0.4);
 }
 
+const HIT_BASE_CHANCE = 0.75;
+const HIT_CHANCE_STEP = 0.02;
+const HIT_MIN_CHANCE = 0.45;
+const HIT_MAX_CHANCE = 0.95;
+
+function clampChance(value, min, max) {
+  const safeValue = Number.isFinite(value) ? value : min;
+  return Math.max(min, Math.min(max, safeValue));
+}
+
+function calculateHitChance(accuracyValue, agilityValue) {
+  const accuracy = Math.max(0, Math.floor(Number(accuracyValue) || 0));
+  const agility = Math.max(0, Math.floor(Number(agilityValue) || 0));
+  return clampChance(HIT_BASE_CHANCE + ((accuracy - agility) * HIT_CHANCE_STEP), HIT_MIN_CHANCE, HIT_MAX_CHANCE);
+}
+
+function rollHit(accuracyValue, agilityValue) {
+  return nextRandom() < calculateHitChance(accuracyValue, agilityValue);
+}
+
 /** [DOC] Dano real desta etapa: max(1, round((atk*1.4) - (def*0.8) + 1)) com variação final 0.8..1.2 */
 function calculateDamage(attackValue, defenseValue) {
   const atk = Math.max(0, Math.floor(Number(attackValue) || 0));
@@ -143,7 +163,19 @@ export function getCombatActionAvailability() {
 function runAttackAction(enemy, encounter) {
   const enemyName = String(enemy.name || 'o inimigo');
   const playerAtk = getEffectiveAtributo('ataque');
+  const playerAccuracy = getEffectiveAtributo('precisao');
   const enemyDef = Math.max(0, Math.floor(Number(enemy.defesa) || 0));
+  const enemyAgility = Math.max(0, Math.floor(Number(enemy.agilidade) || 0));
+
+  if (!rollHit(playerAccuracy, enemyAgility)) {
+    return {
+      ok: true,
+      playerMsgs: [`Você errou o ataque em ${enemyName}`],
+      outcome: COMBAT_OUTCOME_NONE,
+      endTurn: true
+    };
+  }
+
   const damage = calculateDamage(playerAtk, enemyDef);
   const beforeHp = Math.max(0, Math.floor(Number(enemy.vida) || 0));
   const afterHp = Math.max(0, beforeHp - damage);
@@ -247,18 +279,29 @@ export function resolvePendingEnemyTurn() {
 
   const enemyName = String(enemy.name || 'O inimigo');
   const enemyAtk = Math.max(0, Math.floor(Number(enemy.ataque ?? enemy.forca) || 0));
+  const enemyAccuracy = Math.max(0, Math.floor(Number(enemy.precisao) || 0));
   const playerDef = getEffectiveAtributo('defesa');
+  const playerAgility = getEffectiveAtributo('agilidade');
   const guardMultiplier = Number.isFinite(combat.playerGuardMultiplier)
     ? Math.max(0.1, Number(combat.playerGuardMultiplier))
     : 1;
-  const damage = Math.max(1, Math.round(calculateDamage(enemyAtk, playerDef) * guardMultiplier));
-
-  PlayerAPI.addStatus('vida', -damage);
-  const playerDefeated = getEffectiveStatus('vida') <= 0;
 
   clearCombatDefenseState(combat);
   combat.turn = 'player';
   combat.round = Math.max(1, Math.floor(Number(combat.round) || 1)) + 1;
+
+  if (!rollHit(enemyAccuracy, playerAgility)) {
+    return {
+      ok: true,
+      enemyLogs: [`${enemyName} errou o ataque.`],
+      outcome: COMBAT_OUTCOME_NONE
+    };
+  }
+
+  const damage = Math.max(1, Math.round(calculateDamage(enemyAtk, playerDef) * guardMultiplier));
+
+  PlayerAPI.addStatus('vida', -damage);
+  const playerDefeated = getEffectiveStatus('vida') <= 0;
 
   const enemyLogs = [`${enemyName} atacou e causou ${damage} de dano`];
   if (playerDefeated) enemyLogs.push('Você foi derrotado.');

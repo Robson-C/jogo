@@ -16,7 +16,7 @@ import {
   getEffectiveStatus, getEffectiveStatusMax, getEffectiveAtributo, getActiveCombatSkill,
   getCurrentFloor, setCurrentFloor
 } from './state.js';
-import { setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, renderHUD } from './ui.js';
+import { setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, setRunlineFloor, renderHUD } from './ui.js';
 import { showRoomPanel, showEnemyPanel } from './scene_panel.js';
 import { ROOMS, ROOM_IDS } from './rooms.js';
 import { t } from './i18n.js';
@@ -226,6 +226,7 @@ function shouldEnterBossRoomOnNextExplore(options = {}) {
 function advanceToNextFloor() {
   const nextFloor = setCurrentFloor(getCurrentFloor() + 1);
   resetFloorBossProgressInitial();
+  setRunlineFloor(nextFloor);
   return nextFloor;
 }
 
@@ -292,6 +293,7 @@ function restartRun() {
   clearCombatEnemy();
   STATE.currentRoomId = 'sala_vazia';
   setRunlineDay(getDay());
+  setRunlineFloor(getCurrentFloor());
   renderRoom();
   renderHUD();
 }
@@ -1170,10 +1172,18 @@ export function handleAction(idx) {
       if (leavingBossCombatRoom) {
         const nextFloor = advanceToNextFloor();
         exploreSummaryMsgs.push(`Você desce para o andar ${nextFloor}.`);
+        // [CHANGE][WHY] Reforça limpeza do estado de combate ao trocar de andar para evitar
+        // herdar a marca de sala de combate limpa na primeira sala do próximo andar.
+        clearCombatEnemy();
+        clearClearedCombatRoom();
+        clearEmptyRoomFaintRecovery();
       }
 
       const nextRoomId = pickNextRoomId();
       STATE.currentRoomId = nextRoomId;
+      if (String(nextRoomId || '') !== 'sala_combate') {
+        clearClearedCombatRoom();
+      }
 
       const faintRecovery = tryResolveEmptyRoomFaintRecovery(nextRoomId);
       if (faintRecovery.triggered) {
