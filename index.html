@@ -29,6 +29,28 @@
     <section class="game" data-density="roomy" aria-label="Protótipo de interface">
   <!-- =====================[ FIM TRECHO 3 ]===================== -->
    
+      <!-- =====================[ TRECHO 3.1: MENU INICIAL ]===================== -->
+      <div class="menu-screen" id="main-menu" aria-hidden="false">
+        <div class="menu-screen__panel" role="dialog" aria-modal="true" aria-label="Menu inicial">
+          <div class="menu-screen__brand">
+            <div class="menu-screen__eyebrow">Torre da Redenção</div>
+            <h1 class="menu-screen__title" id="main-menu-title">Menu Inicial</h1>
+            <p class="menu-screen__subtitle" id="main-menu-subtitle">Estrutura pronta para até 5 opções.</p>
+          </div>
+
+          <div class="menu-screen__actions" aria-label="Opções iniciais">
+            <button type="button" class="menu-screen__btn menu-screen__btn--primary" id="menu-new-game">Novo Jogo</button>
+            <button type="button" class="menu-screen__btn" id="menu-load-game">Carregar</button>
+            <button type="button" class="menu-screen__btn" id="menu-exit-game">Exit</button>
+            <button type="button" class="menu-screen__btn" id="menu-extra-1" hidden disabled></button>
+            <button type="button" class="menu-screen__btn" id="menu-extra-2" hidden disabled></button>
+          </div>
+
+          <p class="menu-screen__feedback" id="main-menu-feedback" aria-live="polite"></p>
+        </div>
+      </div>
+      <!-- =====================[ FIM TRECHO 3.1 ]===================== -->
+
       <!-- =====================[ TRECHO 4: HEADER + XP (3 COLUNAS) ]===================== -->
       <header class="toprow" aria-label="Topo do jogo">
         <div class="level" aria-label="Nível atual">Level <strong>99</strong><span class="level-points-badge" aria-hidden="true" hidden>+0</span></div>
@@ -40,7 +62,7 @@
           </div>
         </div>
 
-        <button class="icon-btn icon-btn--placeholder" type="button" data-i18n-aria="ui.menu" data-i18n-title="ui.menu" aria-label="Menu" title="Menu" aria-disabled="true" disabled>☰</button>
+        <button class="icon-btn icon-btn--placeholder" id="top-menu-button" type="button" data-i18n-aria="ui.menu" data-i18n-title="ui.menu" aria-label="Menu" title="Menu" aria-disabled="true" disabled>☰</button>
       </header>
       <!-- =====================[ FIM TRECHO 4 ]===================== -->
 

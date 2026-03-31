@@ -14,7 +14,7 @@ import {
   removeModifierById, removeModifiersBySource, removeModifiersByTag,
   addDay, getDay, setDay, initPlayerDefaults, clearAllModifiers,
   getEffectiveStatus, getEffectiveStatusMax, getEffectiveAtributo, getActiveCombatSkill,
-  getCurrentFloor, setCurrentFloor
+  getCurrentFloor, setCurrentFloor, setSaveSlot, createFreshSeedForCurrentSlot, clearLogEntries
 } from './state.js';
 import { setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, setRunlineFloor, renderHUD } from './ui.js';
 import { showRoomPanel, showEnemyPanel } from './scene_panel.js';
@@ -44,12 +44,12 @@ const GAME_OVER_ROOM_ID = 'fim_de_jogo';
 /**
  * [DOC]
  * Controla ações "act" 1x por dia e a regra da sala armadilha.
- * Estruturas são voláteis (não persistidas).
+ * Estado centralizado em STATE; aqui só normalizamos compatibilidade de runtime.
  */
-if (!STATE.actionsUsed) {
-  STATE.actionsUsed = new Set();
+if (!(STATE.actionsUsed instanceof Set)) {
+  STATE.actionsUsed = new Set(Array.isArray(STATE.actionsUsed) ? STATE.actionsUsed : []);
 }
-if (typeof STATE.actionsLastResetDay !== 'number') {
+if (!Number.isFinite(Number(STATE.actionsLastResetDay))) {
   try { STATE.actionsLastResetDay = getDay(); } catch (_) { STATE.actionsLastResetDay = 1; }
 }
 
@@ -259,13 +259,13 @@ function tryResolveEmptyRoomFaintRecovery(nextRoomId) {
     return { triggered: false, recoveryMsgs: [], summaryMsgs: [] };
   }
 
-  if (getBaseStatusValue('energia') > 0) {
+  if (getRuntimeStatusValue('energia') > 0) {
     clearEmptyRoomFaintRecovery();
     return { triggered: false, recoveryMsgs: [], summaryMsgs: [] };
   }
 
   const recoveryMsgs = runEffectsCollectMessages(getEmptyRoomFaintRecoveryEffects());
-  if (getBaseStatusValue('energia') <= 0) {
+  if (getRuntimeStatusValue('energia') <= 0) {
     clearEmptyRoomFaintRecovery();
     return { triggered: false, recoveryMsgs: [], summaryMsgs: [] };
   }
@@ -278,8 +278,13 @@ function tryResolveEmptyRoomFaintRecovery(nextRoomId) {
   };
 }
 
-/** [DOC] Reinicia a run (mantém seed/RNG); limpa mods; reseta jogador e Dia; volta à sala inicial. */
-function restartRun() {
+function clearTransientRoomState() {
+  clearEmptyRoomFaintRecovery();
+  clearClearedCombatRoom();
+  clearCombatEnemy();
+}
+
+function resetRunStateToFirstRoom() {
   clearAllModifiers();
   initPlayerDefaults();
   setDay(1);
@@ -288,25 +293,42 @@ function restartRun() {
   resetFloorBossProgressInitial();
   resetActionUsageForToday();
   STATE.nextRoomEmptyChanceRealBoost = false;
-  clearEmptyRoomFaintRecovery();
-  clearClearedCombatRoom();
-  clearCombatEnemy();
+  clearTransientRoomState();
   STATE.currentRoomId = 'sala_vazia';
   setRunlineDay(getDay());
   setRunlineFloor(getCurrentFloor());
+}
+
+/** [DOC] Reinicia a run (mantém seed/RNG); limpa mods; reseta jogador e Dia; volta à sala inicial. */
+export function restartRun() {
+  resetRunStateToFirstRoom();
   renderRoom();
   renderHUD();
 }
 
-function getBaseStatusValue(key) {
-  const n = Number(STATE?.player?.[key]);
-  return Number.isFinite(n) ? Math.floor(n) : 0;
+export function startNewGameForSlot(slot) {
+  // [ALERTA DE MUDANÇA] Novo Jogo agora escolhe slot, gera seed nova do slot e cria a run inicial limpa antes do primeiro save.
+  setSaveSlot(slot);
+  createFreshSeedForCurrentSlot();
+  clearLogEntries();
+  STATE.bootInitLogged = false;
+  inputLocked = false;
+  resetRunStateToFirstRoom();
+  renderRoom();
+  renderHUD();
+  renderLog(getLogLastNTexts(4));
+  return true;
+}
+
+/* [CHANGE] Unifica as leituras críticas de status com a mesma fonte efetiva usada por HUD e combate. */
+function getRuntimeStatusValue(key) {
+  return Math.max(0, Math.floor(Number(getEffectiveStatus(key)) || 0));
 }
 
 function getFatalStatusCause() {
-  if (getBaseStatusValue('vida') <= 0) return 'death';
-  if (getBaseStatusValue('sanidade') <= 0) return 'insanity';
-  if (getBaseStatusValue('energia') <= 0) return 'exhaustion';
+  if (getRuntimeStatusValue('vida') <= 0) return 'death';
+  if (getRuntimeStatusValue('sanidade') <= 0) return 'insanity';
+  if (getRuntimeStatusValue('energia') <= 0) return 'exhaustion';
   return '';
 }
 
@@ -326,15 +348,13 @@ function getGameOverDescriptionByCause() {
 function goToGameOver(cause = '') {
   STATE.gameOverCause = typeof cause === 'string' ? cause : '';
   if (isGameOverRoom(STATE.currentRoomId)) return true;
-  clearEmptyRoomFaintRecovery();
-  clearClearedCombatRoom();
-  clearCombatEnemy();
+  clearTransientRoomState();
   STATE.currentRoomId = GAME_OVER_ROOM_ID;
   renderRoom();
   return true;
 }
 
-/** [DOC] Fim de jogo centralizado por status BASE zerado. */
+/** [DOC] Fim de jogo centralizado por status efetivo zerado. */
 function checkGameOver() {
   const cause = getFatalStatusCause();
   if (cause && !isGameOverRoom(STATE.currentRoomId)) {
@@ -377,18 +397,19 @@ const COMBAT_ATTACK_ENERGY_COST = 5;
 const COMBAT_DEFEND_ENERGY_COST = 5;
 const FLEE_ENERGY_COST = 5;
 const FLEE_SANITY_COST = 5;
-const FLEE_SUCCESS_CHANCE = 0.5;
+const FLEE_BASE_SUCCESS_CHANCE = 0.7;
+const FLEE_AGILITY_DIFF_STEP = 0.025;
 const FLOOR_BOSS_INITIAL_MIN_ROOMS = 30;
 const FLOOR_BOSS_INITIAL_MAX_ROOMS = 45;
 const FLOOR_BOSS_RESET_MIN_ROOMS = 6;
 const FLOOR_BOSS_RESET_MAX_ROOMS = 10;
 
 const TRAP_RULES_BY_FLOOR = Object.freeze({
-  1: Object.freeze({ difficulty: 12, disarmFailLife: 4, disarmFailSanity: 6, forceEnergy: 6, forceFailLife: 5, analyzeSanity: 10 }),
-  2: Object.freeze({ difficulty: 14, disarmFailLife: 5, disarmFailSanity: 7, forceEnergy: 7, forceFailLife: 6, analyzeSanity: 11 }),
-  3: Object.freeze({ difficulty: 16, disarmFailLife: 6, disarmFailSanity: 8, forceEnergy: 8, forceFailLife: 7, analyzeSanity: 12 }),
-  4: Object.freeze({ difficulty: 18, disarmFailLife: 7, disarmFailSanity: 9, forceEnergy: 9, forceFailLife: 8, analyzeSanity: 13 }),
-  5: Object.freeze({ difficulty: 20, disarmFailLife: 8, disarmFailSanity: 10, forceEnergy: 10, forceFailLife: 9, analyzeSanity: 14 })
+  1: Object.freeze({ difficulty: 8, disarmFailLife: 4, disarmFailSanity: 6, forceEnergy: 6, forceFailLife: 5, analyzeSanity: 10 }),
+  2: Object.freeze({ difficulty: 9, disarmFailLife: 5, disarmFailSanity: 7, forceEnergy: 7, forceFailLife: 6, analyzeSanity: 11 }),
+  3: Object.freeze({ difficulty: 10, disarmFailLife: 6, disarmFailSanity: 8, forceEnergy: 8, forceFailLife: 7, analyzeSanity: 12 }),
+  4: Object.freeze({ difficulty: 11, disarmFailLife: 7, disarmFailSanity: 9, forceEnergy: 9, forceFailLife: 8, analyzeSanity: 13 }),
+  5: Object.freeze({ difficulty: 12, disarmFailLife: 8, disarmFailSanity: 10, forceEnergy: 10, forceFailLife: 9, analyzeSanity: 14 })
 });
 
 function _pctToInt(pct) {
@@ -434,8 +455,8 @@ function getTrapActionPreview(action, room) {
 }
 
 function canPayCombatActionCost(role) {
-  const energy = getBaseStatusValue('energia');
-  const sanity = getBaseStatusValue('sanidade');
+  const energy = getRuntimeStatusValue('energia');
+  const sanity = getRuntimeStatusValue('sanidade');
   switch (role) {
     case 'combat_attack':
       return energy >= COMBAT_ATTACK_ENERGY_COST;
@@ -446,6 +467,14 @@ function canPayCombatActionCost(role) {
     default:
       return true;
   }
+}
+
+function getFleeSuccessChance(enemy) {
+  const playerAgility = Math.max(0, Math.floor(Number(getEffectiveAtributo('agilidade')) || 0));
+  const enemyAgility = Math.max(0, Math.floor(Number(enemy?.agilidade) || 0));
+  const agilityDiff = playerAgility - enemyAgility;
+  const chance = FLEE_BASE_SUCCESS_CHANCE + (agilityDiff * FLEE_AGILITY_DIFF_STEP);
+  return Math.max(0, Math.min(1, chance));
 }
 
 function applyStatusAndGetRealDelta(key, delta) {
@@ -603,6 +632,151 @@ function pickNextRoomId(options = {}) {
   return others[Math.floor(nextRandom() * others.length)] || emptyId;
 }
 
+function setActionState(index, label, enabled) {
+  setActionLabel(index, label);
+  enableAction(index, enabled);
+}
+
+function setExploreOnlyActions(room) {
+  setActionState(0, '', false);
+  setActionState(1, '', false);
+  setActionState(2, '', false);
+
+  const exploreLabel = t('action.explorar', 'Explorar');
+  const exploreSuffix = _formatEffectsForButton({ role: 'explore', effects: [] }, 'explore', room);
+  setActionState(3, exploreSuffix ? `${exploreLabel} ${exploreSuffix}` : exploreLabel, true);
+}
+
+function getRoomDisplayTitle(room, { isGO = false, bossCombatCleared = false, combatCleared = false, faintRecovery = false } = {}) {
+  if (isGO) {
+    const base = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || 'Fim de Jogo');
+    return `${base} — Pontuação: 0`;
+  }
+  if (bossCombatCleared) return t('room.sala_combate_boss_cleared.title', 'Sala do Boss');
+  if (combatCleared) return t('room.sala_combate_cleared.title', 'Sala de Combate');
+  if (faintRecovery) return t('room.sala_vazia_faint_recovery.title', 'Sala Vazia');
+  return room.titleKey ? t(room.titleKey, room.title || '') : (room.title || '');
+}
+
+function getRoomDisplayDescription(room, { roomId = STATE.currentRoomId, isGO = false, bossCombatCleared = false, combatCleared = false, faintRecovery = false } = {}) {
+  if (isGO) return getGameOverDescriptionByCause();
+  if (bossCombatCleared) {
+    return t('room.sala_combate_boss_cleared.desc', 'O boss caiu. A passagem para o próximo andar está livre. Você pode se preparar antes de seguir.');
+  }
+  if (combatCleared) {
+    return t('room.sala_combate_cleared.desc', 'O inimigo caiu. A sala está vazia por enquanto. Você pode se preparar antes de seguir.');
+  }
+  if (faintRecovery) {
+    return t('room.sala_vazia_faint_recovery.desc', 'Você desperta no chão frio. Ao entrar na nova sala, acabou desmaiando — por sorte, ela estava vazia e você conseguiu descansar um pouco. Ainda está fraco demais para qualquer coisa além de seguir em frente.');
+  }
+
+  const altDesc = pickRoomDescVariant(roomId);
+  if (altDesc != null) return altDesc;
+  return room.descKey ? t(room.descKey, room.desc || '') : (room.desc || '');
+}
+
+function renderScenePanelForCurrentRoom(room, flags) {
+  const sceneMode = flags && flags.sceneMode === 'enemy' ? 'enemy' : 'room';
+  if (sceneMode === 'enemy') {
+    const encounter = ensureEncounterForCurrentRoom();
+    showEnemyPanel(encounter && encounter.enemy ? encounter.enemy : null, { backgroundUrl: room.bg || null });
+    return;
+  }
+
+  clearCombatEnemy();
+  const title = getRoomDisplayTitle(room, flags);
+  const desc = getRoomDisplayDescription(room, { ...flags, roomId: STATE.currentRoomId });
+  showRoomPanel({ title, desc: desc || '', backgroundUrl: room.bg || null });
+}
+
+function renderGameOverActions() {
+  setActionState(0, '', false);
+  setActionState(1, '', false);
+  setActionState(2, '', false);
+  setActionState(3, t('action.jogar_novamente', 'Jogar Novamente'), true);
+}
+
+function renderCombatActions(room) {
+  const playerTurn = isPlayerCombatTurn();
+  const availability = getCombatActionAvailability();
+  const skill = getActiveCombatSkill();
+  const attackAction = room.actions?.[0];
+  const defendAction = room.actions?.[1];
+  const skillAction = room.actions?.[2];
+  const fleeAction = room.actions?.[3];
+
+  const attackLabel = attackAction?.labelKey ? t(attackAction.labelKey, attackAction.label || '') : (attackAction?.label || '');
+  const defendLabel = defendAction?.labelKey ? t(defendAction.labelKey, defendAction.label || '') : (defendAction?.label || '');
+  const skillBaseLabel = (skill && skill.name) || (skillAction?.labelKey ? t(skillAction.labelKey, skillAction.label || '') : (skillAction?.label || ''));
+  const attackSuffix = _formatEffectsForButton(attackAction, 'combat_attack', room);
+  const defendSuffix = _formatEffectsForButton(defendAction, 'combat_defend', room);
+  const fleeBaseLabel = fleeAction?.labelKey ? t(fleeAction.labelKey, fleeAction.label || '') : (fleeAction?.label || '');
+  const fleeSuffix = _formatEffectsForButton(fleeAction, 'flee', room);
+
+  const attackEnabled = !!attackAction && !!availability.attack && playerTurn && canPayCombatActionCost('combat_attack');
+  const defendEnabled = !!defendAction && !!availability.defend && playerTurn && canPayCombatActionCost('combat_defend');
+  const skillEnabled = !!skillAction && !!availability.skill && playerTurn && !!skill && hasUsableActiveCombatSkill();
+  const fleeEnabled = !!fleeAction && !!availability.flee && playerTurn && canPayCombatActionCost('flee');
+
+  setActionState(0, attackSuffix ? `${attackLabel} ${attackSuffix}` : attackLabel, attackEnabled);
+  setActionState(1, defendSuffix ? `${defendLabel} ${defendSuffix}` : defendLabel, defendEnabled);
+  setActionState(2, skillBaseLabel, skillEnabled);
+  setActionState(3, fleeSuffix ? `${fleeBaseLabel} ${fleeSuffix}` : fleeBaseLabel, fleeEnabled);
+
+  if (playerTurn && !(attackEnabled || defendEnabled || skillEnabled || fleeEnabled)) {
+    goToGameOver('exhaustion');
+  }
+}
+
+function hasAnyNonExploreActionUsed(room, trap) {
+  const singleChoiceActs = !!room.singleChoiceActs;
+  if (!(trap || singleChoiceActs)) return false;
+
+  for (let j = 0; j < 4; j++) {
+    const action = room.actions?.[j];
+    const role = action ? (action.role || 'act') : 'act';
+    if (action && role !== 'explore' && isActionUsedToday(STATE.currentRoomId, j)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function renderStandardRoomActions(room, trap) {
+  const anyNonExploreUsed = hasAnyNonExploreActionUsed(room, trap);
+  const singleChoiceActs = !!room.singleChoiceActs;
+
+  for (let i = 0; i < 4; i++) {
+    const action = room.actions?.[i];
+    if (!action) {
+      setActionState(i, '???', false);
+      continue;
+    }
+
+    const baseLabel = action.labelKey ? t(action.labelKey, action.label || '') : (action.label || '');
+    const role = action.role || 'act';
+    const suffix = _formatEffectsForButton(action, role, room);
+    const finalLabel = suffix ? `${baseLabel} ${suffix}` : baseLabel;
+
+    let enabled = true;
+    if (trap) {
+      if (role === 'explore') {
+        enabled = anyNonExploreUsed;
+      } else {
+        enabled = !anyNonExploreUsed && !isActionUsedToday(STATE.currentRoomId, i);
+      }
+    } else if (singleChoiceActs) {
+      if (role === 'explore') {
+        enabled = true;
+      } else {
+        enabled = !anyNonExploreUsed && !isActionUsedToday(STATE.currentRoomId, i);
+      }
+    }
+
+    setActionState(i, finalLabel, enabled);
+  }
+}
+
 export function renderRoom() {
   const room = ROOMS[STATE.currentRoomId] || ROOMS['sala_vazia'];
   const trap = isTrapRoom(STATE.currentRoomId);
@@ -610,163 +784,31 @@ export function renderRoom() {
   const isGO = isGameOverRoom(STATE.currentRoomId);
   const combatCleared = combat && isClearedCombatRoom(STATE.currentRoomId);
   const bossCombatCleared = combat && isClearedBossCombatRoom(STATE.currentRoomId);
+  const faintRecovery = isEmptyRoomFaintRecovery(STATE.currentRoomId);
   const sceneMode = (!combatCleared && room.sceneMode === 'enemy') ? 'enemy' : 'room';
 
-  if (sceneMode === 'enemy') {
-    const encounter = ensureEncounterForCurrentRoom();
-    showEnemyPanel(encounter && encounter.enemy ? encounter.enemy : null, { backgroundUrl: room.bg || null });
-  } else {
-    clearCombatEnemy();
-
-    let title = '';
-    if (isGO) {
-      const base = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || 'Fim de Jogo');
-      title = `${base} — Pontuação: 0`;
-    } else if (bossCombatCleared) {
-      title = t('room.sala_combate_boss_cleared.title', 'Sala do Boss');
-    } else if (combatCleared) {
-      title = t('room.sala_combate_cleared.title', 'Sala de Combate');
-    } else if (isEmptyRoomFaintRecovery(STATE.currentRoomId)) {
-      title = t('room.sala_vazia_faint_recovery.title', 'Sala Vazia');
-    } else {
-      title = room.titleKey ? t(room.titleKey, room.title || '') : (room.title || '');
-    }
-
-    const altDesc = pickRoomDescVariant(STATE.currentRoomId);
-    const desc = isGO
-      ? getGameOverDescriptionByCause()
-      : (bossCombatCleared
-        ? t('room.sala_combate_boss_cleared.desc', 'O boss caiu. A passagem para o próximo andar está livre. Você pode se preparar antes de seguir.')
-        : (combatCleared
-          ? t('room.sala_combate_cleared.desc', 'O inimigo caiu. A sala está vazia por enquanto. Você pode se preparar antes de seguir.')
-          : (isEmptyRoomFaintRecovery(STATE.currentRoomId)
-            ? t('room.sala_vazia_faint_recovery.desc', 'Você desperta no chão frio. Ao entrar na nova sala, acabou desmaiando — por sorte, ela estava vazia e você conseguiu descansar um pouco. Ainda está fraco demais para qualquer coisa além de seguir em frente.')
-            : (altDesc != null
-              ? altDesc
-              : (room.descKey ? t(room.descKey, room.desc || '') : (room.desc || ''))))));
-
-    showRoomPanel({ title, desc: desc || '', backgroundUrl: room.bg || null });
-  }
+  renderScenePanelForCurrentRoom(room, { isGO, bossCombatCleared, combatCleared, faintRecovery, sceneMode });
 
   if (isGO) {
-    for (let i = 0; i < 3; i++) { setActionLabel(i, ''); enableAction(i, false); }
-    setActionLabel(3, t('action.jogar_novamente', 'Jogar Novamente'));
-    enableAction(3, true);
+    renderGameOverActions();
     return;
   }
 
   if (combat) {
     if (combatCleared) {
-      setActionLabel(0, '');
-      enableAction(0, false);
-      setActionLabel(1, '');
-      enableAction(1, false);
-      setActionLabel(2, '');
-      enableAction(2, false);
-      const exploreLabel = t('action.explorar', 'Explorar');
-      const exploreSuffix = _formatEffectsForButton({ role: 'explore', effects: [] }, 'explore', room);
-      setActionLabel(3, exploreSuffix ? `${exploreLabel} ${exploreSuffix}` : exploreLabel);
-      enableAction(3, true);
+      setExploreOnlyActions(room);
       return;
     }
-
-    const playerTurn = isPlayerCombatTurn();
-    const availability = getCombatActionAvailability();
-    const skill = getActiveCombatSkill();
-    const attackAction = room.actions?.[0];
-    const defendAction = room.actions?.[1];
-    const skillAction = room.actions?.[2];
-    const fleeAction = room.actions?.[3];
-
-    const attackLabel = attackAction?.labelKey ? t(attackAction.labelKey, attackAction.label || '') : (attackAction?.label || '');
-    const defendLabel = defendAction?.labelKey ? t(defendAction.labelKey, defendAction.label || '') : (defendAction?.label || '');
-    const skillBaseLabel = (skill && skill.name) || (skillAction?.labelKey ? t(skillAction.labelKey, skillAction.label || '') : (skillAction?.label || ''));
-    const attackSuffix = _formatEffectsForButton(attackAction, 'combat_attack', room);
-    const defendSuffix = _formatEffectsForButton(defendAction, 'combat_defend', room);
-    const fleeBaseLabel = fleeAction?.labelKey ? t(fleeAction.labelKey, fleeAction.label || '') : (fleeAction?.label || '');
-    const fleeSuffix = _formatEffectsForButton(fleeAction, 'flee', room);
-
-    setActionLabel(0, attackSuffix ? `${attackLabel} ${attackSuffix}` : attackLabel);
-    enableAction(0, !!attackAction && !!availability.attack && playerTurn && canPayCombatActionCost('combat_attack'));
-
-    setActionLabel(1, defendSuffix ? `${defendLabel} ${defendSuffix}` : defendLabel);
-    enableAction(1, !!defendAction && !!availability.defend && playerTurn && canPayCombatActionCost('combat_defend'));
-
-    setActionLabel(2, skillBaseLabel);
-    enableAction(2, !!skillAction && !!availability.skill && playerTurn && !!skill && hasUsableActiveCombatSkill());
-
-    const fleeEnabled = !!fleeAction && !!availability.flee && playerTurn && canPayCombatActionCost('flee');
-    setActionLabel(3, fleeSuffix ? `${fleeBaseLabel} ${fleeSuffix}` : fleeBaseLabel);
-    enableAction(3, fleeEnabled);
-
-    if (playerTurn) {
-      const attackEnabled = !!attackAction && !!availability.attack && canPayCombatActionCost('combat_attack');
-      const defendEnabled = !!defendAction && !!availability.defend && canPayCombatActionCost('combat_defend');
-      const skillEnabled = !!skillAction && !!availability.skill && !!skill && hasUsableActiveCombatSkill();
-      if (!(attackEnabled || defendEnabled || skillEnabled || fleeEnabled)) {
-        goToGameOver('exhaustion');
-        return;
-      }
-    }
+    renderCombatActions(room);
     return;
   }
 
-  if (isEmptyRoomFaintRecovery(STATE.currentRoomId)) {
-    setActionLabel(0, '');
-    enableAction(0, false);
-    setActionLabel(1, '');
-    enableAction(1, false);
-    setActionLabel(2, '');
-    enableAction(2, false);
-    const exploreLabel = t('action.explorar', 'Explorar');
-    const exploreSuffix = _formatEffectsForButton({ role: 'explore', effects: [] }, 'explore', room);
-    setActionLabel(3, exploreSuffix ? `${exploreLabel} ${exploreSuffix}` : exploreLabel);
-    enableAction(3, true);
+  if (faintRecovery) {
+    setExploreOnlyActions(room);
     return;
   }
 
-  let anyNonExploreUsed = false;
-  const singleChoiceActs = !!room.singleChoiceActs;
-  if (trap || singleChoiceActs) {
-    for (let j = 0; j < 4; j++) {
-      const aj = room.actions?.[j];
-      const roleJ = aj ? (aj.role || 'act') : 'act';
-      if (aj && roleJ !== 'explore' && isActionUsedToday(STATE.currentRoomId, j)) {
-        anyNonExploreUsed = true; break;
-      }
-    }
-  }
-
-  for (let i = 0; i < 4; i++) {
-    const a = room.actions?.[i];
-    if (a) {
-      const baseLabel = a.labelKey ? t(a.labelKey, a.label || '') : (a.label || '');
-      const role = a.role || 'act';
-      const suffix = _formatEffectsForButton(a, role, room);
-      const finalLabel = suffix ? `${baseLabel} ${suffix}` : baseLabel;
-
-      setActionLabel(i, finalLabel);
-
-      let enabled = true;
-      if (trap) {
-        if (role === 'explore') {
-          enabled = anyNonExploreUsed;
-        } else {
-          enabled = !anyNonExploreUsed && !isActionUsedToday(STATE.currentRoomId, i);
-        }
-      } else if (singleChoiceActs) {
-        if (role === 'explore') {
-          enabled = true;
-        } else {
-          enabled = !anyNonExploreUsed && !isActionUsedToday(STATE.currentRoomId, i);
-        }
-      }
-      enableAction(i, enabled);
-    } else {
-      setActionLabel(i, '???');
-      enableAction(i, false);
-    }
-  }
+  renderStandardRoomActions(room, trap);
 }
 /* =====================[ FIM TRECHO 5 ]===================== */
 
@@ -912,9 +954,7 @@ function moveToNextRoomAfterCombat(options = {}) {
   addDay(1);
   setRunlineDay(getDay());
   resetActionUsageForToday();
-  clearEmptyRoomFaintRecovery();
-  clearClearedCombatRoom();
-  clearCombatEnemy();
+  clearTransientRoomState();
   STATE.currentRoomId = pickNextRoomId(options);
   renderRoom();
 }
@@ -1007,228 +1047,279 @@ function getCombatActionTypeFromRole(role) {
   return null;
 }
 
+function refreshHUDAndLog() {
+  renderHUD();
+  renderLog(getLogLastNTexts(4));
+}
+
+function appendActionOutcomeLog(eventLabel, effectMsgs, summaryMsgs = []) {
+  if (Array.isArray(summaryMsgs) && summaryMsgs.length) {
+    appendActionLogSections(eventLabel, [effectMsgs, summaryMsgs]);
+    return;
+  }
+  appendActionLog(eventLabel, effectMsgs);
+}
+
+function refreshHUDLogAndActionOutcome(eventLabel, effectMsgs, summaryMsgs = []) {
+  renderHUD();
+  appendActionOutcomeLog(eventLabel, effectMsgs, summaryMsgs);
+  renderLog(getLogLastNTexts(4));
+}
+
+function logActionOutcomeAndRefresh(eventLabel, effectMsgs, summaryMsgs = []) {
+  appendActionOutcomeLog(eventLabel, effectMsgs, summaryMsgs);
+  renderHUD();
+  renderLog(getLogLastNTexts(4));
+}
+
+function createActionContext(idx) {
+  const room = ROOMS[STATE.currentRoomId] || ROOMS['sala_vazia'];
+  const action = room.actions?.[idx];
+  if (!action) return null;
+
+  const combatCleared = isClearedCombatRoom(STATE.currentRoomId);
+  const faintRecoveryRoom = isEmptyRoomFaintRecovery(STATE.currentRoomId);
+  if ((combatCleared || faintRecoveryRoom) && idx !== 3) return null;
+
+  const forcedExplore = (combatCleared || faintRecoveryRoom) && idx === 3;
+  const role = forcedExplore ? 'explore' : (action.role || 'act');
+  const eventLabel = forcedExplore
+    ? t('action.explorar', 'Explorar')
+    : (action.labelKey
+      ? t(action.labelKey, '')
+      : _stripButtonSuffix(getActionLabel(idx)));
+
+  return {
+    idx,
+    room,
+    action,
+    role,
+    eventLabel,
+    effectMsgs: []
+  };
+}
+
+function beginActionExecution(ctx) {
+  if (!ctx || typeof ctx !== 'object') return false;
+  if (ctx.role === 'act' && isActionUsedToday(STATE.currentRoomId, ctx.idx)) {
+    return false;
+  }
+  if (ctx.role === 'act') {
+    markActionUsedToday(STATE.currentRoomId, ctx.idx);
+  }
+  return true;
+}
+
+function handleGameOverAction(idx) {
+  if (!isGameOverRoom(STATE.currentRoomId)) return false;
+  if (idx === 3) {
+    restartRun();
+    renderLog(getLogLastNTexts(4));
+  }
+  return true;
+}
+
+async function resolveFleeActionFlow(ctx) {
+  if (!canPayCombatActionCost('flee')) return;
+
+  const fleeEnergyDelta = applyStatusAndGetRealDelta('energia', -FLEE_ENERGY_COST);
+  const fleeSanityDelta = applyStatusAndGetRealDelta('sanidade', -FLEE_SANITY_COST);
+  if (fleeEnergyDelta !== 0) ctx.effectMsgs.push(formatStatusDeltaMessage('Energia', fleeEnergyDelta));
+  if (fleeSanityDelta !== 0) ctx.effectMsgs.push(formatStatusDeltaMessage('Sanidade', fleeSanityDelta));
+
+  if (checkGameOver()) {
+    refreshHUDLogAndActionOutcome(ctx.eventLabel, ctx.effectMsgs);
+    return;
+  }
+
+  const encounter = getCurrentEncounter();
+  const enemy = encounter && encounter.enemy ? encounter.enemy : null;
+  const success = nextRandom() < getFleeSuccessChance(enemy);
+  if (success) {
+    const fleeingBossEncounter = isCurrentEncounterBoss();
+    const summaryMsgs = [t('combat.flee_success', 'Fuga bem-sucedida')];
+    let moveOptions = {};
+    if (fleeingBossEncounter) {
+      resetFloorBossProgressAfterBossFlee();
+      summaryMsgs.push(t('combat.boss_flee_reset', 'O boss recuou. Ele pode reaparecer em 6 a 10 salas.'));
+      moveOptions = { consumeBossProgress: false };
+    }
+    moveToNextRoomAfterCombat(moveOptions);
+    appendActionLogSections(ctx.eventLabel, [ctx.effectMsgs, summaryMsgs]);
+    refreshHUDAndLog();
+    return;
+  }
+
+  ctx.effectMsgs.push(t('combat.flee_fail', 'Fuga falhou'));
+  logActionOutcomeAndRefresh(ctx.eventLabel, ctx.effectMsgs);
+
+  const enemyPhaseResolved = await resolveCombatEnemyPhaseWithDelay();
+  if (enemyPhaseResolved && checkGameOver()) {
+    refreshHUDAndLog();
+    return;
+  }
+
+  refreshHUDAndLog();
+}
+
+function applyCombatActionPrimaryCost(role, primaryMsgs) {
+  if (!Array.isArray(primaryMsgs)) return;
+  if (role === 'combat_attack') {
+    const energyDelta = applyStatusAndGetRealDelta('energia', -COMBAT_ATTACK_ENERGY_COST);
+    if (energyDelta !== 0) primaryMsgs.push(formatStatusDeltaMessage('Energia', energyDelta));
+    return;
+  }
+  if (role === 'combat_defend') {
+    const energyDelta = applyStatusAndGetRealDelta('energia', -COMBAT_DEFEND_ENERGY_COST);
+    if (energyDelta !== 0) primaryMsgs.push(formatStatusDeltaMessage('Energia', energyDelta));
+  }
+}
+
+async function resolveCombatActionFlow(ctx) {
+  const combatActionType = getCombatActionTypeFromRole(ctx.role);
+  if (!combatActionType) return false;
+  if (!canPayCombatActionCost(ctx.role)) return true;
+
+  const primaryMsgs = [];
+  applyCombatActionPrimaryCost(ctx.role, primaryMsgs);
+
+  if (checkGameOver()) {
+    logActionOutcomeAndRefresh(ctx.eventLabel, primaryMsgs);
+    return true;
+  }
+
+  const combatStep = queueCombatPlayerAction(combatActionType);
+  if (!combatStep.ok) return true;
+
+  primaryMsgs.push(...(Array.isArray(combatStep.playerMsgs) ? combatStep.playerMsgs.slice() : []));
+  const outcomeResolution = resolveCombatOutcome(combatStep.outcome);
+  logActionOutcomeAndRefresh(ctx.eventLabel, primaryMsgs, outcomeResolution.summaryMsgs);
+
+  if (!outcomeResolution.terminal) {
+    if (checkGameOver()) {
+      refreshHUDAndLog();
+      return true;
+    }
+    renderRoom();
+    if (checkCombatDeadendGameOver()) {
+      refreshHUDAndLog();
+      return true;
+    }
+  }
+
+  refreshHUDAndLog();
+  if (!outcomeResolution.terminal && !isPlayerCombatTurn()) {
+    const enemyPhaseResolved = await resolveCombatEnemyPhaseWithDelay();
+    if (enemyPhaseResolved && checkGameOver()) {
+      refreshHUDAndLog();
+      return true;
+    }
+  }
+
+  refreshHUDAndLog();
+  return true;
+}
+
+function runRoomActEffects(ctx) {
+  if (!ctx || typeof ctx !== 'object') return;
+  if (isTrapRoom(STATE.currentRoomId) && ctx.role === 'act' && typeof ctx.action?.trapKind === 'string') {
+    ctx.effectMsgs.push(...runTrapAction(ctx.action.trapKind, ctx.room));
+    return;
+  }
+  ctx.effectMsgs.push(...runEffectsCollectMessages(ctx.action?.effects || []));
+}
+
+function applyRoomActionUsageLock(ctx) {
+  if (!ctx || typeof ctx !== 'object') return;
+  if ((isTrapRoom(STATE.currentRoomId) || ctx.room.singleChoiceActs) && ctx.role === 'act') {
+    for (let j = 0; j < 4; j++) {
+      const aj = ctx.room.actions?.[j];
+      const rj = aj ? (aj.role || 'act') : 'act';
+      if (aj && rj === 'act') markActionUsedToday(STATE.currentRoomId, j);
+    }
+    renderRoom();
+  }
+}
+
+function resolveExploreActionFlow(ctx) {
+  const exploreSummaryMsgs = [];
+  if (!ctx || ctx.role !== 'explore') return exploreSummaryMsgs;
+
+  const leavingBossCombatRoom = isClearedBossCombatRoom(STATE.currentRoomId);
+  const exploreEnergyDelta = applyStatusAndGetRealDelta('energia', -EXPLORE_ENERGY_COST);
+  if (exploreEnergyDelta !== 0) ctx.effectMsgs.push(`${exploreEnergyDelta >= 0 ? '+' : ''}${exploreEnergyDelta} Energia`);
+
+  addDay(1);
+  setRunlineDay(getDay());
+  resetActionUsageForToday();
+
+  clearTransientRoomState();
+
+  if (leavingBossCombatRoom) {
+    const nextFloor = advanceToNextFloor();
+    exploreSummaryMsgs.push(`Você desce para o andar ${nextFloor}.`);
+    // [CHANGE][WHY] Reforça limpeza do estado de combate ao trocar de andar para evitar
+    // herdar a marca de sala de combate limpa na primeira sala do próximo andar.
+    clearTransientRoomState();
+  }
+
+  const nextRoomId = pickNextRoomId();
+  STATE.currentRoomId = nextRoomId;
+  if (String(nextRoomId || '') !== 'sala_combate') {
+    clearClearedCombatRoom();
+  }
+
+  const faintRecovery = tryResolveEmptyRoomFaintRecovery(nextRoomId);
+  if (faintRecovery.triggered) {
+    ctx.effectMsgs.push(...faintRecovery.recoveryMsgs);
+    exploreSummaryMsgs.push(...faintRecovery.summaryMsgs);
+  }
+
+  renderRoom();
+  return exploreSummaryMsgs;
+}
+
+function finalizeRoomActionFlow(ctx, exploreSummaryMsgs = []) {
+  const summaryMsgs = Array.isArray(exploreSummaryMsgs) ? exploreSummaryMsgs : [];
+
+  if (checkGameOver()) {
+    refreshHUDLogAndActionOutcome(ctx.eventLabel, ctx.effectMsgs, summaryMsgs);
+    return true;
+  }
+
+  if (checkCombatDeadendGameOver()) {
+    refreshHUDLogAndActionOutcome(ctx.eventLabel, ctx.effectMsgs, summaryMsgs);
+    return true;
+  }
+
+  refreshHUDLogAndActionOutcome(ctx.eventLabel, ctx.effectMsgs, summaryMsgs);
+  return true;
+}
+
 export function handleAction(idx) {
   return withInputLock(async () => {
     ensureActionUsageDaySync();
 
-    if (isGameOverRoom(STATE.currentRoomId)) {
-      if (idx === 3) {
-        restartRun();
-        renderLog(getLogLastNTexts(4));
-      }
+    if (handleGameOverAction(idx)) return;
+
+    const ctx = createActionContext(idx);
+    if (!ctx) return;
+    if (!beginActionExecution(ctx)) return;
+
+    if (ctx.role === 'flee') {
+      await resolveFleeActionFlow(ctx);
       return;
     }
 
-    const room = ROOMS[STATE.currentRoomId] || ROOMS['sala_vazia'];
-    const action = room.actions?.[idx];
-    if (!action) return;
-
-    const combatCleared = isClearedCombatRoom(STATE.currentRoomId);
-    const faintRecoveryRoom = isEmptyRoomFaintRecovery(STATE.currentRoomId);
-    if ((combatCleared || faintRecoveryRoom) && idx !== 3) return;
-
-    const forcedExplore = (combatCleared || faintRecoveryRoom) && idx === 3;
-    const role = forcedExplore ? 'explore' : (action.role || 'act');
-    const eventLabel = forcedExplore
-      ? t('action.explorar', 'Explorar')
-      : (action.labelKey
-        ? t(action.labelKey, '')
-        : _stripButtonSuffix(getActionLabel(idx)));
-
-    if (role === 'act' && isActionUsedToday(STATE.currentRoomId, idx)) {
-      return;
-    }
-    if (role === 'act') {
-      markActionUsedToday(STATE.currentRoomId, idx);
-    }
-
-    const effectMsgs = [];
-
-    if (role === 'flee') {
-      if (!canPayCombatActionCost('flee')) return;
-      const fleeEnergyDelta = applyStatusAndGetRealDelta('energia', -FLEE_ENERGY_COST);
-      const fleeSanityDelta = applyStatusAndGetRealDelta('sanidade', -FLEE_SANITY_COST);
-      if (fleeEnergyDelta !== 0) effectMsgs.push(formatStatusDeltaMessage('Energia', fleeEnergyDelta));
-      if (fleeSanityDelta !== 0) effectMsgs.push(formatStatusDeltaMessage('Sanidade', fleeSanityDelta));
-
-      if (checkGameOver()) {
-        renderHUD();
-        appendActionLog(eventLabel, effectMsgs);
-        renderLog(getLogLastNTexts(4));
-        return;
-      }
-
-      const success = nextRandom() < FLEE_SUCCESS_CHANCE;
-      if (success) {
-        const fleeingBossEncounter = isCurrentEncounterBoss();
-        const summaryMsgs = [t('combat.flee_success', 'Fuga bem-sucedida')];
-        let moveOptions = {};
-        if (fleeingBossEncounter) {
-          resetFloorBossProgressAfterBossFlee();
-          summaryMsgs.push(t('combat.boss_flee_reset', 'O boss recuou. Ele pode reaparecer em 6 a 10 salas.'));
-          moveOptions = { consumeBossProgress: false };
-        }
-        moveToNextRoomAfterCombat(moveOptions);
-        appendActionLogSections(eventLabel, [effectMsgs, summaryMsgs]);
-        renderHUD();
-        renderLog(getLogLastNTexts(4));
-        return;
-      } else {
-        effectMsgs.push(t('combat.flee_fail', 'Fuga falhou'));
-        appendActionLog(eventLabel, effectMsgs);
-        renderHUD();
-        renderLog(getLogLastNTexts(4));
-        const enemyPhaseResolved = await resolveCombatEnemyPhaseWithDelay();
-        if (enemyPhaseResolved && checkGameOver()) {
-          renderHUD();
-          renderLog(getLogLastNTexts(4));
-          return;
-        }
-        renderHUD();
-        renderLog(getLogLastNTexts(4));
-        return;
-      }
-    } else {
-      const combatActionType = getCombatActionTypeFromRole(role);
-      if (combatActionType) {
-        if (!canPayCombatActionCost(role)) return;
-        const primaryMsgs = [];
-        if (role === 'combat_attack') {
-          const energyDelta = applyStatusAndGetRealDelta('energia', -COMBAT_ATTACK_ENERGY_COST);
-          if (energyDelta !== 0) primaryMsgs.push(formatStatusDeltaMessage('Energia', energyDelta));
-        } else if (role === 'combat_defend') {
-          const energyDelta = applyStatusAndGetRealDelta('energia', -COMBAT_DEFEND_ENERGY_COST);
-          if (energyDelta !== 0) primaryMsgs.push(formatStatusDeltaMessage('Energia', energyDelta));
-        }
-        if (checkGameOver()) {
-          appendActionLog(eventLabel, primaryMsgs);
-          renderHUD();
-          renderLog(getLogLastNTexts(4));
-          return;
-        }
-        const combatStep = queueCombatPlayerAction(combatActionType);
-        if (!combatStep.ok) return;
-        primaryMsgs.push(...(Array.isArray(combatStep.playerMsgs) ? combatStep.playerMsgs.slice() : []));
-        const outcomeResolution = resolveCombatOutcome(combatStep.outcome);
-        appendActionLogSections(eventLabel, [primaryMsgs, outcomeResolution.summaryMsgs]);
-        if (!outcomeResolution.terminal) {
-          if (checkGameOver()) {
-            renderHUD();
-            renderLog(getLogLastNTexts(4));
-            return;
-          }
-          renderRoom();
-          if (checkCombatDeadendGameOver()) {
-            renderHUD();
-            renderLog(getLogLastNTexts(4));
-            return;
-          }
-        }
-        renderHUD();
-        renderLog(getLogLastNTexts(4));
-        if (!outcomeResolution.terminal && !isPlayerCombatTurn()) {
-          const enemyPhaseResolved = await resolveCombatEnemyPhaseWithDelay();
-          if (enemyPhaseResolved && checkGameOver()) {
-            renderHUD();
-            renderLog(getLogLastNTexts(4));
-            return;
-          }
-        }
-        renderHUD();
-        renderLog(getLogLastNTexts(4));
-        return;
-      }
-
-      if (isTrapRoom(STATE.currentRoomId) && role === 'act' && typeof action.trapKind === 'string') {
-        effectMsgs.push(...runTrapAction(action.trapKind, room));
-      } else {
-        effectMsgs.push(...runEffectsCollectMessages(action.effects || []));
-      }
-    }
-
-    if ((isTrapRoom(STATE.currentRoomId) || room.singleChoiceActs) && role === 'act') {
-      for (let j = 0; j < 4; j++) {
-        const aj = room.actions?.[j];
-        const rj = aj ? (aj.role || 'act') : 'act';
-        if (aj && rj === 'act') markActionUsedToday(STATE.currentRoomId, j);
-      }
-      renderRoom();
-    }
-
-    let exploreSummaryMsgs = [];
-    if (role === 'explore') {
-      const leavingBossCombatRoom = isClearedBossCombatRoom(STATE.currentRoomId);
-      const exploreEnergyDelta = applyStatusAndGetRealDelta('energia', -EXPLORE_ENERGY_COST);
-      if (exploreEnergyDelta !== 0) effectMsgs.push(`${exploreEnergyDelta >= 0 ? '+' : ''}${exploreEnergyDelta} Energia`);
-
-      addDay(1);
-      setRunlineDay(getDay());
-      resetActionUsageForToday();
-
-      clearCombatEnemy();
-      clearClearedCombatRoom();
-      clearEmptyRoomFaintRecovery();
-
-      if (leavingBossCombatRoom) {
-        const nextFloor = advanceToNextFloor();
-        exploreSummaryMsgs.push(`Você desce para o andar ${nextFloor}.`);
-        // [CHANGE][WHY] Reforça limpeza do estado de combate ao trocar de andar para evitar
-        // herdar a marca de sala de combate limpa na primeira sala do próximo andar.
-        clearCombatEnemy();
-        clearClearedCombatRoom();
-        clearEmptyRoomFaintRecovery();
-      }
-
-      const nextRoomId = pickNextRoomId();
-      STATE.currentRoomId = nextRoomId;
-      if (String(nextRoomId || '') !== 'sala_combate') {
-        clearClearedCombatRoom();
-      }
-
-      const faintRecovery = tryResolveEmptyRoomFaintRecovery(nextRoomId);
-      if (faintRecovery.triggered) {
-        effectMsgs.push(...faintRecovery.recoveryMsgs);
-        exploreSummaryMsgs.push(...faintRecovery.summaryMsgs);
-      }
-
-      renderRoom();
-      if (checkCombatDeadendGameOver()) {
-        renderHUD();
-        appendActionLogSections(eventLabel, [effectMsgs, exploreSummaryMsgs]);
-        renderLog(getLogLastNTexts(4));
-        return;
-      }
-    }
-
-    if (checkGameOver()) {
-      renderHUD();
-      if (exploreSummaryMsgs.length) {
-        appendActionLogSections(eventLabel, [effectMsgs, exploreSummaryMsgs]);
-      } else {
-        appendActionLog(eventLabel, effectMsgs);
-      }
-      renderLog(getLogLastNTexts(4));
+    if (await resolveCombatActionFlow(ctx)) {
       return;
     }
 
-    if (checkCombatDeadendGameOver()) {
-      renderHUD();
-      if (exploreSummaryMsgs.length) {
-        appendActionLogSections(eventLabel, [effectMsgs, exploreSummaryMsgs]);
-      } else {
-        appendActionLog(eventLabel, effectMsgs);
-      }
-      renderLog(getLogLastNTexts(4));
-      return;
-    }
+    runRoomActEffects(ctx);
+    applyRoomActionUsageLock(ctx);
 
-    renderHUD();
-    if (exploreSummaryMsgs.length) {
-      appendActionLogSections(eventLabel, [effectMsgs, exploreSummaryMsgs]);
-    } else {
-      appendActionLog(eventLabel, effectMsgs);
-    }
-    renderLog(getLogLastNTexts(4));
+    const exploreSummaryMsgs = resolveExploreActionFlow(ctx);
+    finalizeRoomActionFlow(ctx, exploreSummaryMsgs);
   });
 }
 /* =====================[ FIM TRECHO 8 ]===================== */

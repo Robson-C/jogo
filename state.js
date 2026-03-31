@@ -51,8 +51,9 @@ export const STATE = {
   // [STATE] Encontro atual da cena (volátil; null fora de salas com encontro).
   encounter: null,
 
-  // [STATE][LEGACY] Mantido apenas por compatibilidade transitória com versões anteriores.
-  currentCombatEnemy: null,
+  // [STATE] Controle central de ações de sala usadas no dia atual.
+  actionsUsed: new Set(),
+  actionsLastResetDay: 1,
 
   // [STATE] Sala de combate limpa atual (usa o roomId canônico enquanto o jogador ainda está nela).
   clearedCombatRoomId: '',
@@ -330,7 +331,146 @@ function storageKeys(slot = STATE.slot) {
   return {
     seed: `${base}.seed`,
     rngIndex: `${base}.rngIndex`,
+    meta: `${base}.meta`,
+    data: `${base}.data`
   };
+}
+
+function normalizeSaveSlotNumber(slot) {
+  const n = Math.floor(Number(slot) || 1);
+  if (n < 1) return 1;
+  if (n > 3) return 3;
+  return n;
+}
+
+function cloneSerializable(value, fallback) {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function parseStoredJSON(raw) {
+  if (typeof raw !== 'string' || !raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function isValidSaveSnapshot(data, expectedSlot) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  if (typeof data.version !== 'string' || !data.version) return false;
+  if (normalizeSaveSlotNumber(data.slot) !== normalizeSaveSlotNumber(expectedSlot)) return false;
+  if (typeof data.seed !== 'string' || !data.seed) return false;
+  if (!Number.isFinite(Number(data.rngIndex)) || Number(data.rngIndex) < 0) return false;
+  if (typeof data.currentRoomId !== 'string' || !data.currentRoomId) return false;
+  if (!data.player || typeof data.player !== 'object' || Array.isArray(data.player)) return false;
+  return true;
+}
+
+function buildSaveSnapshot(slot = STATE.slot) {
+  return {
+    version: VERSION,
+    savedAt: Date.now(),
+    slot: normalizeSaveSlotNumber(slot),
+    seed: String(STATE.seed || ''),
+    rngIndex: Math.max(0, Math.floor(Number(STATE.rngIndex) || 0)),
+    currentRoomId: String(STATE.currentRoomId || 'sala_vazia'),
+    day: Math.max(1, Math.floor(Number(STATE.day) || 1)),
+    currentFloor: Math.max(1, Math.floor(Number(STATE.currentFloor) || 1)),
+    floorBossState: String(STATE.floorBossState || 'pending'),
+    floorBossCountdown: Math.max(0, Math.floor(Number(STATE.floorBossCountdown) || 0)),
+    gameOverCause: String(STATE.gameOverCause || ''),
+    bootInitLogged: !!STATE.bootInitLogged,
+    nextRoomEmptyChanceRealBoost: !!STATE.nextRoomEmptyChanceRealBoost,
+    emptyRoomFaintRecoveryRoomId: String(STATE.emptyRoomFaintRecoveryRoomId || ''),
+    encounter: cloneSerializable(STATE.encounter, null),
+    clearedCombatRoomId: String(STATE.clearedCombatRoomId || ''),
+    clearedCombatRoomType: String(STATE.clearedCombatRoomType || ''),
+    actionsUsed: Array.from(STATE.actionsUsed instanceof Set ? STATE.actionsUsed : []),
+    actionsLastResetDay: Math.max(1, Math.floor(Number(STATE.actionsLastResetDay) || 1)),
+    player: cloneSerializable(STATE.player, {}),
+    modifiers: cloneSerializable(STATE.modifiers, [])
+  };
+}
+
+function buildSaveMetaFromSnapshot(snapshot) {
+  return {
+    version: String(snapshot.version || VERSION),
+    savedAt: Math.max(0, Math.floor(Number(snapshot.savedAt) || Date.now())),
+    slot: normalizeSaveSlotNumber(snapshot.slot),
+    hasData: true,
+    day: Math.max(1, Math.floor(Number(snapshot.day) || 1)),
+    currentFloor: Math.max(1, Math.floor(Number(snapshot.currentFloor) || 1)),
+    level: Math.max(1, Math.floor(Number(snapshot?.player?.level) || 1)),
+    currentRoomId: String(snapshot.currentRoomId || 'sala_vazia')
+  };
+}
+
+export function getSaveSlot() {
+  return normalizeSaveSlotNumber(STATE.slot);
+}
+
+export function setSaveSlot(slot) {
+  STATE.slot = normalizeSaveSlotNumber(slot);
+  return STATE.slot;
+}
+
+export function clearLogEntries() {
+  STATE.log = [];
+  return 0;
+}
+
+export function createFreshSeedForCurrentSlot() {
+  const KEYS = storageKeys();
+  STATE.seed = newSeedString();
+  STATE.rngIndex = 0;
+  try {
+    localStorage.setItem(KEYS.seed, STATE.seed);
+    localStorage.setItem(KEYS.rngIndex, '0');
+  } catch (_) {}
+  return STATE.seed;
+}
+
+export function saveCurrentGameToSlot(slot = STATE.slot) {
+  const safeSlot = setSaveSlot(slot);
+  const KEYS = storageKeys(safeSlot);
+  const snapshot = buildSaveSnapshot(safeSlot);
+  const meta = buildSaveMetaFromSnapshot(snapshot);
+  try {
+    localStorage.setItem(KEYS.seed, String(snapshot.seed || ''));
+    localStorage.setItem(KEYS.rngIndex, String(snapshot.rngIndex || 0));
+    localStorage.setItem(KEYS.data, JSON.stringify(snapshot));
+    localStorage.setItem(KEYS.meta, JSON.stringify(meta));
+    return { ok: true, slot: safeSlot, meta };
+  } catch (_) {
+    return { ok: false, slot: safeSlot, meta: null };
+  }
+}
+
+export function getSaveSlotMeta(slot) {
+  const safeSlot = normalizeSaveSlotNumber(slot);
+  const KEYS = storageKeys(safeSlot);
+  let meta = null;
+  let data = null;
+  try {
+    meta = parseStoredJSON(localStorage.getItem(KEYS.meta));
+    data = parseStoredJSON(localStorage.getItem(KEYS.data));
+  } catch (_) {
+    return null;
+  }
+  if (!isValidSaveSnapshot(data, safeSlot)) return null;
+  const safeMeta = meta && typeof meta === 'object' && !Array.isArray(meta)
+    ? { ...meta, ...buildSaveMetaFromSnapshot(data), slot: safeSlot, hasData: true }
+    : buildSaveMetaFromSnapshot(data);
+  return safeMeta;
+}
+
+export function hasSavedGameInSlot(slot) {
+  return !!getSaveSlotMeta(slot);
 }
 
 /* ---------------------- XP/Nível/Atributos ---------------------- */

@@ -4,7 +4,7 @@
  * Subsistema isolado para encontros da cena.
  * - Cria e limpa o encontro atual sem acoplar renderização ou HUD.
  * - Hoje suporta combate normal e boss por andar.
- * - Mantém compatibilidade transitória com STATE.currentCombatEnemy.
+ * - Usa STATE.encounter como única fonte de verdade do encontro ativo.
  */
 import { STATE, nextRandom, getDay, getCurrentFloor } from './state.js';
 import { ROOMS } from './rooms.js';
@@ -44,7 +44,6 @@ export function hasActiveEncounter() {
 
 export function clearCurrentEncounter() {
   STATE.encounter = null;
-  STATE.currentCombatEnemy = null;
 }
 
 export function ensureEncounterForCurrentRoom() {
@@ -58,7 +57,6 @@ export function ensureEncounterForCurrentRoom() {
 
   const current = getCurrentEncounter();
   if (current && current.roomId === roomId && current.type === room.encounterType && current.enemy) {
-    STATE.currentCombatEnemy = current.enemy;
     return current;
   }
 
@@ -79,7 +77,6 @@ export function ensureEncounterForCurrentRoom() {
     enemy,
     combat: room.encounterType === 'combat' ? { round: 1, turn: 'player' } : null
   };
-  STATE.currentCombatEnemy = enemy;
   return STATE.encounter;
 }
 /* =====================[ FIM TRECHO 1 ]===================== */

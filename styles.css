@@ -147,6 +147,94 @@ body{
 /* =====================[ FIM TRECHO 2 ]===================== */
 
 
+/* =====================[ TRECHO 2.1: MENU INICIAL ]===================== */
+.menu-screen{
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 1.2rem) 1.2rem calc(env(safe-area-inset-bottom, 0px) + 1.2rem);
+  background:
+    linear-gradient(180deg, rgba(255,253,248,0.96), rgba(245,237,224,0.94)),
+    radial-gradient(circle at top, rgba(93, 66, 184, 0.16), transparent 34%),
+    radial-gradient(circle at bottom, rgba(185, 135, 46, 0.12), transparent 30%);
+}
+.menu-screen[hidden]{ display:none !important; }
+.menu-screen__panel{
+  width: min(100%, 29rem);
+  padding: 1.6rem;
+  border-radius: 1.6rem;
+  border: 0.1rem solid rgba(189, 166, 133, 0.55);
+  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,240,228,0.92));
+  box-shadow: var(--shadow-panel);
+}
+.menu-screen__brand{
+  text-align: center;
+  margin-bottom: 1.35rem;
+}
+.menu-screen__eyebrow{
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.menu-screen__title{
+  margin: 0.45rem 0 0;
+  font-size: 2.15rem;
+  font-weight: 900;
+  color: var(--text);
+}
+.menu-screen__subtitle{
+  margin: 0.55rem 0 0;
+  font-size: 1.12rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.menu-screen__actions{
+  display: grid;
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.menu-screen__btn,
+.menu-screen__slot{
+  min-height: 4.6rem;
+  border-radius: 1.2rem;
+}
+.menu-screen__btn{
+  width: 100%;
+  border: 0.1rem solid rgba(107, 93, 82, 0.12);
+  background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(246,238,226,0.92));
+  color: var(--text);
+  font-size: 1.36rem;
+  font-weight: 800;
+  box-shadow: var(--shadow-soft), inset 0 0.1rem 0 rgba(255,255,255,0.8);
+}
+.menu-screen__btn--primary{
+  border-color: rgba(93, 66, 184, 0.3);
+  background: linear-gradient(180deg, rgba(93, 66, 184, 0.96), rgba(140, 116, 234, 0.94));
+  color: #fff;
+}
+.menu-screen__btn:focus-visible{
+  outline: 0.2rem solid rgba(93, 66, 184, 0.4);
+  outline-offset: 0.2rem;
+}
+.menu-screen__slot--placeholder{
+  border: 0.1rem dashed rgba(107, 93, 82, 0.18);
+  background: rgba(255,255,255,0.28);
+}
+.menu-screen__feedback{
+  min-height: 1.6rem;
+  margin: 0.95rem 0 0;
+  text-align: center;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+/* =====================[ FIM TRECHO 2.1 ]===================== */
+
 /* =====================[ TRECHO 3: HEADER + XP (3 COLUNAS) ]===================== */
 .toprow{
   display: grid;

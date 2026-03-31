@@ -3,28 +3,23 @@
  * [DOC] Responsável por acessar e atualizar o DOM com segurança:
  *  - Nunca usa innerHTML para textos (somente textContent).
  *  - Garante 4 linhas de log visíveis (log compacto com auto-fit 4→3→2→1).
- *  - Faz o bind único dos 4 botões de ação.
+ *  - Faz o bind único dos 4 botões de ação, sem duplicar listeners em reinit.
  *  - renderHUD(): atualiza barras/atributos/XP/level com snapshot efetivo.
  *  - Modal do histórico de logs (clique no bloco .log).
- *  - setRoomDesc() e setRoomBackground() para descrição e fundo de sala.
+ *  - [CHANGE] O painel de cena (sala/inimigo) fica isolado em scene_panel.js.
  * Não possui estado próprio do jogo (STATE fica em state.js).
  */
 import { getDay, getEffectivePlayerSnapshot, getLogLastN, getLogLastNTexts, getPlayerSnapshot, getAttributeUpgradeCost, PlayerAPI, appendLog } from './state.js'; // [DOC]
 
 let els = {
-  roomTitle: null,
-  roomDesc: null,
-  roomSection: null,
   actions: [],
   logView: null,
-  enemyCard: null,
-  enemyName: null,
-  enemyHpBar: null,
-  enemyHpFill: null,
-  enemyStatAtk: null,
-  enemyStatDef: null,
-  enemyStatAcc: null,
-  enemyStatAgi: null
+  menuOverlay: null,
+  menuTitle: null,
+  menuSubtitle: null,
+  menuFeedback: null,
+  menuToggle: null,
+  menuButtons: { newGame: null, loadGame: null, exitGame: null, extra1: null, extra2: null }
 };
 
 // [STATE-UI] cache leve para modal
@@ -87,11 +82,10 @@ let _statusModal = {
 let _lastLogStrings = [];
 let _fitRAF = 0;
 let _fitting = false;
+let _uiActionHandler = null;
+let _resizeBound = false;
 
 export function initUI() {
-  els.roomTitle   = document.querySelector('.room-title');
-  els.roomDesc    = document.querySelector('.room-desc');
-  els.roomSection = document.querySelector('.room');
   els.actions = [
     document.getElementById('act-1'),
     document.getElementById('act-2'),
@@ -99,15 +93,18 @@ export function initUI() {
     document.getElementById('act-4')
   ].filter(Boolean);
   els.logView = document.querySelector('.log-view');
-  els.enemyCard = document.querySelector('.enemy-card');
-  els.enemyName = els.enemyCard ? els.enemyCard.querySelector('.enemy-name') : null;
-  els.enemyHpBar = els.enemyCard ? els.enemyCard.querySelector('.enemy-hp') : null;
-  els.enemyHpFill = els.enemyHpBar ? els.enemyHpBar.querySelector('.fill') : null;
-  const enemyChips = els.enemyCard ? els.enemyCard.querySelectorAll('.enemy-stats .stat-chip') : [];
-  els.enemyStatAtk = enemyChips[0] || null;
-  els.enemyStatDef = enemyChips[1] || null;
-  els.enemyStatAcc = enemyChips[2] || null;
-  els.enemyStatAgi = enemyChips[3] || null;
+  els.menuOverlay = document.getElementById('main-menu');
+  els.menuTitle = document.getElementById('main-menu-title');
+  els.menuSubtitle = document.getElementById('main-menu-subtitle');
+  els.menuFeedback = document.getElementById('main-menu-feedback');
+  els.menuToggle = document.getElementById('top-menu-button');
+  els.menuButtons = {
+    newGame: document.getElementById('menu-new-game'),
+    loadGame: document.getElementById('menu-load-game'),
+    exitGame: document.getElementById('menu-exit-game'),
+    extra1: document.getElementById('menu-extra-1'),
+    extra2: document.getElementById('menu-extra-2')
+  };
   ensureLogLines();
 
   // Modal de histórico
@@ -115,12 +112,17 @@ export function initUI() {
   _bindAttrModalHandlers();
   _bindStatusModalHandlers();
 
-  // Re-ajuste responsivo do log compacto
-  window.addEventListener('resize', () => {
-    if (!els.logView || !_lastLogStrings) return;
-    _renderLogStringsToDOM(_lastLogStrings);
-    _scheduleAutoFit();
-  }, { passive: true });
+  // [CHANGE] Mantém apenas um listener global de resize, mesmo se initUI() rodar novamente.
+  if (!_resizeBound) {
+    window.addEventListener('resize', _handleUIResize, { passive: true });
+    _resizeBound = true;
+  }
+}
+
+function _handleUIResize() {
+  if (!els.logView || !_lastLogStrings) return;
+  _renderLogStringsToDOM(_lastLogStrings);
+  _scheduleAutoFit();
 }
 
 function ensureLogLines() {
@@ -135,96 +137,6 @@ function ensureLogLines() {
   // Remove ocultações residuais (o auto-fit cuidará do visível)
   const fixed = els.logView.querySelectorAll('.log-line');
   for (let i = 0; i < fixed.length; i++) fixed[i].style.display = '';
-}
-
-export function setRoomTitle(text) {
-  if (els.roomTitle) els.roomTitle.textContent = String(text || '');
-}
-
-/* Descrição textual simples da sala */
-export function setRoomDesc(text) {
-  if (els.roomDesc) els.roomDesc.textContent = String(text || '');
-}
-
-/* Background declarativo por sala (CSS var) */
-export function setRoomBackground(urlOrNull) {
-  if (!els.roomSection) els.roomSection = document.querySelector('.room');
-  if (!els.roomSection) return;
-  const val = (urlOrNull && typeof urlOrNull === 'string' && urlOrNull.trim())
-    ? `url("${urlOrNull}")` : 'none';
-  try { els.roomSection.style.setProperty('--room-bg', val); } catch (_) {}
-}
-
-
-/* Cartão de inimigo: exibe nome, vida e atributos quando houver combate ativo */
-export function renderEnemyCard(enemy) {
-  if (!els.enemyCard) els.enemyCard = document.querySelector('.enemy-card');
-  if (!els.enemyCard) return;
-
-  if (!enemy || typeof enemy !== 'object') {
-    clearEnemyCard();
-    return;
-  }
-
-  if (!els.enemyName) els.enemyName = els.enemyCard.querySelector('.enemy-name');
-  if (!els.enemyHpBar) els.enemyHpBar = els.enemyCard.querySelector('.enemy-hp');
-  if (!els.enemyHpFill && els.enemyHpBar) els.enemyHpFill = els.enemyHpBar.querySelector('.fill');
-  if (!els.enemyStatAtk || !els.enemyStatDef || !els.enemyStatAcc || !els.enemyStatAgi) {
-    const enemyChips = els.enemyCard.querySelectorAll('.enemy-stats .stat-chip');
-    els.enemyStatAtk = enemyChips[0] || null;
-    els.enemyStatDef = enemyChips[1] || null;
-    els.enemyStatAcc = enemyChips[2] || null;
-    els.enemyStatAgi = enemyChips[3] || null;
-  }
-
-  const maxVida = Math.max(1, Math.floor(Number(enemy.maxVida) || 1));
-  const vida = Math.max(0, Math.min(maxVida, Math.floor(Number(enemy.vida) || 0)));
-  const pct = Math.round((vida / maxVida) * 100);
-
-  if (els.enemyName) els.enemyName.textContent = `${String(enemy.name || 'Inimigo')} — ${vida}/${maxVida}`;
-  if (els.enemyHpBar) {
-    els.enemyHpBar.setAttribute('aria-valuemin', '0');
-    els.enemyHpBar.setAttribute('aria-valuemax', String(maxVida));
-    els.enemyHpBar.setAttribute('aria-valuenow', String(vida));
-  }
-  if (els.enemyHpFill) els.enemyHpFill.style.width = `${pct}%`;
-
-  if (els.enemyStatAtk) els.enemyStatAtk.textContent = String(Math.max(0, Math.floor(Number(enemy.ataque ?? enemy.forca) || 0)));
-  if (els.enemyStatDef) els.enemyStatDef.textContent = String(Math.max(0, Math.floor(Number(enemy.defesa) || 0)));
-  if (els.enemyStatAcc) els.enemyStatAcc.textContent = String(Math.max(0, Math.floor(Number(enemy.precisao) || 0)));
-  if (els.enemyStatAgi) els.enemyStatAgi.textContent = String(Math.max(0, Math.floor(Number(enemy.agilidade) || 0)));
-
-  try { els.enemyCard.hidden = false; } catch (_) {}
-}
-
-export function clearEnemyCard() {
-  if (!els.enemyCard) els.enemyCard = document.querySelector('.enemy-card');
-  if (!els.enemyCard) return;
-
-  if (!els.enemyName) els.enemyName = els.enemyCard.querySelector('.enemy-name');
-  if (!els.enemyHpBar) els.enemyHpBar = els.enemyCard.querySelector('.enemy-hp');
-  if (!els.enemyHpFill && els.enemyHpBar) els.enemyHpFill = els.enemyHpBar.querySelector('.fill');
-  if (!els.enemyStatAtk || !els.enemyStatDef || !els.enemyStatAcc || !els.enemyStatAgi) {
-    const enemyChips = els.enemyCard.querySelectorAll('.enemy-stats .stat-chip');
-    els.enemyStatAtk = enemyChips[0] || null;
-    els.enemyStatDef = enemyChips[1] || null;
-    els.enemyStatAcc = enemyChips[2] || null;
-    els.enemyStatAgi = enemyChips[3] || null;
-  }
-
-  if (els.enemyName) els.enemyName.textContent = 'Inimigo';
-  if (els.enemyHpBar) {
-    els.enemyHpBar.setAttribute('aria-valuemin', '0');
-    els.enemyHpBar.setAttribute('aria-valuemax', '100');
-    els.enemyHpBar.setAttribute('aria-valuenow', '100');
-  }
-  if (els.enemyHpFill) els.enemyHpFill.style.width = '100%';
-  if (els.enemyStatAtk) els.enemyStatAtk.textContent = '0';
-  if (els.enemyStatDef) els.enemyStatDef.textContent = '0';
-  if (els.enemyStatAcc) els.enemyStatAcc.textContent = '0';
-  if (els.enemyStatAgi) els.enemyStatAgi.textContent = '0';
-
-  try { els.enemyCard.hidden = true; } catch (_) {}
 }
 
 export function setActionLabel(index, text) {
@@ -242,12 +154,124 @@ export function enableAction(index, enabled) {
   if (btn) btn.disabled = !enabled;
 }
 
+export function bindMainMenu(handlers = {}) {
+  const onNewGame = typeof handlers.onNewGame === 'function' ? handlers.onNewGame : null;
+  const onLoadGame = typeof handlers.onLoadGame === 'function' ? handlers.onLoadGame : null;
+  const onExitGame = typeof handlers.onExitGame === 'function' ? handlers.onExitGame : null;
+  const onExtra1 = typeof handlers.onExtra1 === 'function' ? handlers.onExtra1 : null;
+  const onExtra2 = typeof handlers.onExtra2 === 'function' ? handlers.onExtra2 : null;
+  const onBackdrop = typeof handlers.onBackdrop === 'function' ? handlers.onBackdrop : null;
+
+  const btnNewGame = els.menuButtons && els.menuButtons.newGame;
+  const btnLoadGame = els.menuButtons && els.menuButtons.loadGame;
+  const btnExitGame = els.menuButtons && els.menuButtons.exitGame;
+  const btnExtra1 = els.menuButtons && els.menuButtons.extra1;
+  const btnExtra2 = els.menuButtons && els.menuButtons.extra2;
+
+  if (btnNewGame && !btnNewGame.dataset.boundMenu) {
+    btnNewGame.dataset.boundMenu = 'true';
+    btnNewGame.addEventListener('click', () => { if (onNewGame) onNewGame(); }, { passive: true });
+  }
+  if (btnLoadGame && !btnLoadGame.dataset.boundMenu) {
+    btnLoadGame.dataset.boundMenu = 'true';
+    btnLoadGame.addEventListener('click', () => { if (onLoadGame) onLoadGame(); }, { passive: true });
+  }
+  if (btnExitGame && !btnExitGame.dataset.boundMenu) {
+    btnExitGame.dataset.boundMenu = 'true';
+    btnExitGame.addEventListener('click', () => { if (onExitGame) onExitGame(); }, { passive: true });
+  }
+  if (btnExtra1 && !btnExtra1.dataset.boundMenu) {
+    btnExtra1.dataset.boundMenu = 'true';
+    btnExtra1.addEventListener('click', () => { if (onExtra1) onExtra1(); }, { passive: true });
+  }
+  if (btnExtra2 && !btnExtra2.dataset.boundMenu) {
+    btnExtra2.dataset.boundMenu = 'true';
+    btnExtra2.addEventListener('click', () => { if (onExtra2) onExtra2(); }, { passive: true });
+  }
+  if (els.menuOverlay && !els.menuOverlay.dataset.boundMenuOverlay) {
+    els.menuOverlay.dataset.boundMenuOverlay = 'true';
+    els.menuOverlay.addEventListener('click', (ev) => {
+      if (ev.target !== els.menuOverlay) return;
+      if (onBackdrop) onBackdrop();
+    }, { passive: true });
+  }
+}
+
+export function setTopMenuButtonEnabled(enabled) {
+  const btn = els.menuToggle;
+  if (!btn) return;
+  const allow = !!enabled;
+  btn.disabled = !allow;
+  btn.setAttribute('aria-disabled', allow ? 'false' : 'true');
+  btn.classList.toggle('icon-btn--placeholder', !allow);
+}
+
+export function bindTopMenuButton(onToggle) {
+  const btn = els.menuToggle;
+  if (!btn || btn.dataset.boundTopMenu) return;
+  btn.dataset.boundTopMenu = 'true';
+  btn.addEventListener('click', () => {
+    if (typeof onToggle === 'function') onToggle();
+  }, { passive: true });
+}
+
+export function setMainMenuTitle(text) {
+  if (els.menuTitle) els.menuTitle.textContent = String(text || '');
+}
+
+export function setMainMenuSubtitle(text) {
+  if (els.menuSubtitle) els.menuSubtitle.textContent = String(text || '');
+}
+
+export function configureMainMenuButton(key, config = {}) {
+  const btn = els.menuButtons && els.menuButtons[key];
+  if (!btn) return;
+
+  const text = typeof config.text === 'string' ? config.text : '';
+  const hidden = !!config.hidden;
+  const disabled = !!config.disabled;
+  const primary = !!config.primary;
+
+  btn.textContent = text;
+  btn.disabled = disabled;
+  if (hidden) btn.setAttribute('hidden', '');
+  else btn.removeAttribute('hidden');
+  btn.classList.toggle('menu-screen__btn--primary', primary);
+}
+
+export function showMainMenu() {
+  if (els.menuOverlay) {
+    els.menuOverlay.removeAttribute('hidden');
+    els.menuOverlay.setAttribute('aria-hidden', 'false');
+  }
+  setMainMenuFeedback('');
+}
+
+export function hideMainMenu() {
+  if (els.menuOverlay) {
+    els.menuOverlay.setAttribute('hidden', '');
+    els.menuOverlay.setAttribute('aria-hidden', 'true');
+  }
+  setMainMenuFeedback('');
+}
+
+export function setMainMenuFeedback(text) {
+  if (!els.menuFeedback) return;
+  els.menuFeedback.textContent = String(text || '');
+}
+
 /** [DOC] Bind único dos 4 botões de ação; callback recebe índice 0..3. */
 export function bindActions(onAction) {
+  _uiActionHandler = typeof onAction === 'function' ? onAction : null;
+
   for (let i = 0; i < 4; i++) {
     const btn = els.actions[i];
-    if (!btn) continue;
-    btn.addEventListener('click', () => onAction(i), { passive: true });
+    if (!btn || btn.dataset.boundAction === 'true') continue;
+
+    btn.dataset.boundAction = 'true';
+    btn.addEventListener('click', () => {
+      if (_uiActionHandler) _uiActionHandler(i);
+    }, { passive: true });
   }
 }
 

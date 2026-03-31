@@ -20,6 +20,17 @@ export const LOCALES = {
     'ui.actions': 'Ações',
     'ui.log': 'Log',
     'ui.rotate': 'Gire o aparelho para continuar',
+    'ui.main_menu.title': 'Menu Inicial',
+    'ui.main_menu.subtitle': 'Estrutura pronta para até 5 opções.',
+    'ui.main_menu.new_game': 'Novo Jogo',
+    'ui.main_menu.load': 'Carregar',
+    'ui.main_menu.exit': 'Exit',
+    'ui.main_menu.slot_select.title': 'Escolher Slot',
+    'ui.main_menu.slot_select.subtitle': 'Novo jogo sobrescreve o slot escolhido.',
+    'ui.main_menu.back': 'Voltar',
+    'ui.main_menu.slot_prefix': 'Slot',
+    'ui.main_menu.slot.empty': 'Vazio',
+    'ui.main_menu.slot.filled': 'Ocupado',
 
     // --- Salas (títulos) ---
     'room.sala_vazia.title': 'Sala Vazia',
@@ -84,7 +95,7 @@ export const LOCALES = {
     'explore.empty_room_faint_recovery': 'Você desmaiou ao entrar na nova sala. Por sorte, ela estava vazia e você conseguiu descansar um pouco.',
 
     // --- Mensagens iniciais (intro) ---
-    'intro.1': '...',
+    'intro.1': 'Você acorda em um local com pouca luz.',
     'intro.2': 'Você não lembra quem é... nem onde está...',
     'intro.3': 'Parece uma sala vazia e abandonada há muito tempo.'
   }
