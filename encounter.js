@@ -37,11 +37,6 @@ export function getCurrentEncounter() {
   return STATE.encounter && typeof STATE.encounter === 'object' ? STATE.encounter : null;
 }
 
-export function hasActiveEncounter() {
-  const encounter = getCurrentEncounter();
-  return !!(encounter && encounter.enemy);
-}
-
 export function clearCurrentEncounter() {
   STATE.encounter = null;
 }

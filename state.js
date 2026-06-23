@@ -45,6 +45,9 @@ export const STATE = {
   // [STATE] Bônus volátil: o próximo sorteio de sala usa 50% de chance real para sala_vazia.
   nextRoomEmptyChanceRealBoost: false,
 
+  // [STATE] Checkpoint de save manual: true apenas na primeira sala vazia após derrotar o boss do andar.
+  saveCheckpointAvailable: false,
+
   // [STATE] Sala vazia especial após desmaio ao explorar com energia zerada.
   emptyRoomFaintRecoveryRoomId: '',
 
@@ -360,14 +363,129 @@ function parseStoredJSON(raw) {
   }
 }
 
+const SAVE_PLAYER_NUMBER_KEYS = Object.freeze([
+  'vida', 'energia', 'mana', 'sanidade',
+  'maxVida', 'maxEnergia', 'maxMana', 'maxSanidade',
+  'ataque', 'defesa', 'precisao', 'agilidade',
+  'level', 'xp',
+  'pontosAtributoLivres', 'pontosAtributoGastos',
+  'pontosStatusLivres', 'pontosStatusGastos'
+]);
+const SAVE_VALID_ROOM_IDS = Object.freeze(['sala_vazia', 'sala_fonte', 'sala_armadilha', 'sala_combate', 'fim_de_jogo']);
+
+function isSavedFiniteNumber(value) {
+  return Number.isFinite(Number(value));
+}
+
+function isValidSavedRoomId(roomId) {
+  return SAVE_VALID_ROOM_IDS.includes(String(roomId || ''));
+}
+
+function getSavedLevelFromXP(totalXP) {
+  const total = Math.max(0, Math.floor(Number(totalXP) || 0));
+  let lv = LEVEL_MIN;
+  while (lv < LEVEL_MAX) {
+    const base = totalXPForLevelStart(lv);
+    const need = xpNeededFor(lv);
+    if (total >= base + need) lv++;
+    else break;
+  }
+  return lv;
+}
+
+function getSavedAttributeSpentCost(player) {
+  let total = 0;
+  for (let i = 0; i < ATRIB_KEYS.length; i++) {
+    const key = ATRIB_KEYS[i];
+    const value = Math.floor(Number(player[key]) || 0);
+    if (value < 5 || value > ATTRIBUTE_MAX) return null;
+    for (let cur = 5; cur < value; cur++) {
+      total += getAttributeUpgradeCost(cur);
+    }
+  }
+  return total;
+}
+
+function getSavedStatusSpentCost(player) {
+  let total = 0;
+  for (let i = 0; i < STATUS_KEYS.length; i++) {
+    const maxKey = STATUS_MAX_KEY[STATUS_KEYS[i]];
+    const maxValue = Math.floor(Number(player[maxKey]) || 0);
+    if (maxValue < 100) return null;
+    const delta = maxValue - 100;
+    if (delta % STATUS_POINT_BONUS !== 0) return null;
+    total += delta / STATUS_POINT_BONUS;
+  }
+  return total;
+}
+
+function isValidSavedPlayerProgression(player) {
+  const expectedLevel = getSavedLevelFromXP(player.xp);
+  if (player.level !== expectedLevel) return false;
+
+  const attrSpent = getSavedAttributeSpentCost(player);
+  if (attrSpent == null || player.pontosAtributoGastos !== attrSpent) return false;
+  const attrEarned = getEarnedAttributePointsForLevel(expectedLevel);
+  if (player.pontosAtributoLivres + player.pontosAtributoGastos !== attrEarned) return false;
+
+  const statusSpent = getSavedStatusSpentCost(player);
+  if (statusSpent == null || player.pontosStatusGastos !== statusSpent) return false;
+  const statusEarned = getEarnedStatusPointsForLevel(expectedLevel);
+  if (player.pontosStatusLivres + player.pontosStatusGastos !== statusEarned) return false;
+
+  return true;
+}
+
+function normalizeSavedPlayer(player) {
+  if (!player || typeof player !== 'object' || Array.isArray(player)) return null;
+
+  for (let i = 0; i < SAVE_PLAYER_NUMBER_KEYS.length; i++) {
+    const key = SAVE_PLAYER_NUMBER_KEYS[i];
+    if (!isSavedFiniteNumber(player[key])) return null;
+  }
+
+  const maxVida = Math.max(1, Math.floor(Number(player.maxVida) || 0));
+  const maxEnergia = Math.max(1, Math.floor(Number(player.maxEnergia) || 0));
+  const maxMana = Math.max(1, Math.floor(Number(player.maxMana) || 0));
+  const maxSanidade = Math.max(1, Math.floor(Number(player.maxSanidade) || 0));
+
+  const normalized = {
+    vida: Math.max(0, Math.min(maxVida, Math.floor(Number(player.vida) || 0))),
+    energia: Math.max(0, Math.min(maxEnergia, Math.floor(Number(player.energia) || 0))),
+    mana: Math.max(0, Math.min(maxMana, Math.floor(Number(player.mana) || 0))),
+    sanidade: Math.max(0, Math.min(maxSanidade, Math.floor(Number(player.sanidade) || 0))),
+    maxVida,
+    maxEnergia,
+    maxMana,
+    maxSanidade,
+    ataque: Math.max(0, Math.min(ATTRIBUTE_MAX, Math.floor(Number(player.ataque) || 0))),
+    defesa: Math.max(0, Math.min(ATTRIBUTE_MAX, Math.floor(Number(player.defesa) || 0))),
+    precisao: Math.max(0, Math.min(ATTRIBUTE_MAX, Math.floor(Number(player.precisao) || 0))),
+    agilidade: Math.max(0, Math.min(ATTRIBUTE_MAX, Math.floor(Number(player.agilidade) || 0))),
+    level: Math.max(LEVEL_MIN, Math.min(LEVEL_MAX, Math.floor(Number(player.level) || LEVEL_MIN))),
+    xp: Math.max(0, Math.floor(Number(player.xp) || 0)),
+    pontosAtributoLivres: Math.max(0, Math.floor(Number(player.pontosAtributoLivres) || 0)),
+    pontosAtributoGastos: Math.max(0, Math.floor(Number(player.pontosAtributoGastos) || 0)),
+    pontosStatusLivres: Math.max(0, Math.floor(Number(player.pontosStatusLivres) || 0)),
+    pontosStatusGastos: Math.max(0, Math.floor(Number(player.pontosStatusGastos) || 0)),
+    activeCombatSkillId: typeof player.activeCombatSkillId === 'string' ? player.activeCombatSkillId : '',
+    activeCombatSkillName: typeof player.activeCombatSkillName === 'string' ? player.activeCombatSkillName : ''
+  };
+
+  if (!isValidSavedPlayerProgression(normalized)) return null;
+  return normalized;
+}
+
 function isValidSaveSnapshot(data, expectedSlot) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
   if (typeof data.version !== 'string' || !data.version) return false;
   if (normalizeSaveSlotNumber(data.slot) !== normalizeSaveSlotNumber(expectedSlot)) return false;
   if (typeof data.seed !== 'string' || !data.seed) return false;
-  if (!Number.isFinite(Number(data.rngIndex)) || Number(data.rngIndex) < 0) return false;
-  if (typeof data.currentRoomId !== 'string' || !data.currentRoomId) return false;
-  if (!data.player || typeof data.player !== 'object' || Array.isArray(data.player)) return false;
+  if (!Number.isInteger(Number(data.rngIndex)) || Number(data.rngIndex) < 0) return false;
+  if (!isValidSavedRoomId(data.currentRoomId)) return false;
+  if (!Number.isInteger(Number(data.day)) || Number(data.day) < 1) return false;
+  if (!Number.isInteger(Number(data.currentFloor)) || Number(data.currentFloor) < 1 || Number(data.currentFloor) > FLOOR_MAX) return false;
+  if (!normalizeSavedPlayer(data.player)) return false;
   return true;
 }
 
@@ -386,6 +504,7 @@ function buildSaveSnapshot(slot = STATE.slot) {
     gameOverCause: String(STATE.gameOverCause || ''),
     bootInitLogged: !!STATE.bootInitLogged,
     nextRoomEmptyChanceRealBoost: !!STATE.nextRoomEmptyChanceRealBoost,
+    saveCheckpointAvailable: !!STATE.saveCheckpointAvailable,
     emptyRoomFaintRecoveryRoomId: String(STATE.emptyRoomFaintRecoveryRoomId || ''),
     encounter: cloneSerializable(STATE.encounter, null),
     clearedCombatRoomId: String(STATE.clearedCombatRoomId || ''),
@@ -393,7 +512,8 @@ function buildSaveSnapshot(slot = STATE.slot) {
     actionsUsed: Array.from(STATE.actionsUsed instanceof Set ? STATE.actionsUsed : []),
     actionsLastResetDay: Math.max(1, Math.floor(Number(STATE.actionsLastResetDay) || 1)),
     player: cloneSerializable(STATE.player, {}),
-    modifiers: cloneSerializable(STATE.modifiers, [])
+    modifiers: cloneSerializable(STATE.modifiers, []),
+    log: cloneSerializable(STATE.log, [])
   };
 }
 
@@ -419,6 +539,20 @@ export function setSaveSlot(slot) {
   return STATE.slot;
 }
 
+export function canSaveCurrentGame() {
+  return !!(
+    STATE.saveCheckpointAvailable &&
+    String(STATE.currentRoomId || '') === 'sala_vazia' &&
+    !STATE.encounter &&
+    String(STATE.gameOverCause || '') === ''
+  );
+}
+
+export function setSaveCheckpointAvailable(enabled) {
+  STATE.saveCheckpointAvailable = !!enabled;
+  return STATE.saveCheckpointAvailable;
+}
+
 export function clearLogEntries() {
   STATE.log = [];
   return 0;
@@ -435,8 +569,26 @@ export function createFreshSeedForCurrentSlot() {
   return STATE.seed;
 }
 
+export function clearSaveSlot(slot = STATE.slot) {
+  const safeSlot = normalizeSaveSlotNumber(slot);
+  const KEYS = storageKeys(safeSlot);
+  try {
+    localStorage.removeItem(KEYS.seed);
+    localStorage.removeItem(KEYS.rngIndex);
+    localStorage.removeItem(KEYS.data);
+    localStorage.removeItem(KEYS.meta);
+    return { ok: true, slot: safeSlot };
+  } catch (_) {
+    return { ok: false, slot: safeSlot };
+  }
+}
+
 export function saveCurrentGameToSlot(slot = STATE.slot) {
-  const safeSlot = setSaveSlot(slot);
+  const safeSlot = normalizeSaveSlotNumber(slot);
+  if (!canSaveCurrentGame()) {
+    return { ok: false, slot: safeSlot, meta: null, reason: 'checkpoint_unavailable' };
+  }
+  setSaveSlot(safeSlot);
   const KEYS = storageKeys(safeSlot);
   const snapshot = buildSaveSnapshot(safeSlot);
   const meta = buildSaveMetaFromSnapshot(snapshot);
@@ -471,6 +623,72 @@ export function getSaveSlotMeta(slot) {
 
 export function hasSavedGameInSlot(slot) {
   return !!getSaveSlotMeta(slot);
+}
+
+function getModifierSequenceFromSnapshot(modifiers) {
+  if (!Array.isArray(modifiers)) return 0;
+  let maxSeq = 0;
+  for (let i = 0; i < modifiers.length; i++) {
+    const id = String(modifiers[i]?.id || '');
+    const match = /^mod-(\d+)$/.exec(id);
+    if (!match) continue;
+    const n = Math.floor(Number(match[1]) || 0);
+    if (n > maxSeq) maxSeq = n;
+  }
+  return maxSeq;
+}
+
+function normalizeFloorBossState(value) {
+  const state = String(value || 'pending');
+  return state === 'active' || state === 'defeated' ? state : 'pending';
+}
+
+function restoreSaveSnapshot(snapshot, slot) {
+  const safeSlot = normalizeSaveSlotNumber(slot);
+  const savedPlayer = normalizeSavedPlayer(snapshot.player);
+  if (!savedPlayer) return false;
+  STATE.version = String(snapshot.version || VERSION);
+  STATE.slot = safeSlot;
+  STATE.seed = String(snapshot.seed || '');
+  STATE.rngIndex = Math.max(0, Math.floor(Number(snapshot.rngIndex) || 0));
+  STATE.currentRoomId = String(snapshot.currentRoomId || 'sala_vazia');
+  STATE.day = Math.max(1, Math.floor(Number(snapshot.day) || 1));
+  STATE.currentFloor = Math.max(1, Math.floor(Number(snapshot.currentFloor) || 1));
+  STATE.floorBossState = normalizeFloorBossState(snapshot.floorBossState);
+  STATE.floorBossCountdown = Math.max(0, Math.floor(Number(snapshot.floorBossCountdown) || 0));
+  STATE.gameOverCause = String(snapshot.gameOverCause || '');
+  STATE.bootInitLogged = !!snapshot.bootInitLogged;
+  STATE.nextRoomEmptyChanceRealBoost = !!snapshot.nextRoomEmptyChanceRealBoost;
+  STATE.saveCheckpointAvailable = !!snapshot.saveCheckpointAvailable && String(snapshot.currentRoomId || '') === 'sala_vazia';
+  STATE.emptyRoomFaintRecoveryRoomId = String(snapshot.emptyRoomFaintRecoveryRoomId || '');
+  STATE.encounter = cloneSerializable(snapshot.encounter, null);
+  STATE.clearedCombatRoomId = String(snapshot.clearedCombatRoomId || '');
+  STATE.clearedCombatRoomType = String(snapshot.clearedCombatRoomType || '');
+  STATE.actionsUsed = new Set(Array.isArray(snapshot.actionsUsed) ? snapshot.actionsUsed.map((it) => String(it || '')) : []);
+  STATE.actionsLastResetDay = Math.max(1, Math.floor(Number(snapshot.actionsLastResetDay) || STATE.day || 1));
+  STATE.player = savedPlayer;
+  STATE.modifiers = Array.isArray(snapshot.modifiers) ? cloneSerializable(snapshot.modifiers, []) : [];
+  STATE._modSeq = getModifierSequenceFromSnapshot(STATE.modifiers);
+  STATE.log = Array.isArray(snapshot.log) ? cloneSerializable(snapshot.log, []) : [];
+  return true;
+}
+
+export function loadGameFromSlot(slot) {
+  const safeSlot = normalizeSaveSlotNumber(slot);
+  const KEYS = storageKeys(safeSlot);
+  let data = null;
+  try {
+    data = parseStoredJSON(localStorage.getItem(KEYS.data));
+  } catch (_) {
+    return { ok: false, slot: safeSlot, reason: 'storage_unavailable' };
+  }
+  if (!isValidSaveSnapshot(data, safeSlot)) {
+    return { ok: false, slot: safeSlot, reason: 'invalid_or_empty_slot' };
+  }
+  if (!restoreSaveSnapshot(data, safeSlot)) {
+    return { ok: false, slot: safeSlot, reason: 'invalid_or_empty_slot' };
+  }
+  return { ok: true, slot: safeSlot, meta: buildSaveMetaFromSnapshot(data) };
 }
 
 /* ---------------------- XP/Nível/Atributos ---------------------- */
@@ -1009,6 +1227,7 @@ export function initPlayerDefaults() {
   STATE.gameOverCause = '';
   STATE.floorBossState = 'pending';
   STATE.floorBossCountdown = 0;
+  STATE.saveCheckpointAvailable = false;
   STATE.emptyRoomFaintRecoveryRoomId = '';
   STATE.clearedCombatRoomId = '';
   STATE.clearedCombatRoomType = '';

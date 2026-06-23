@@ -47,7 +47,6 @@ body{
   -moz-osx-font-smoothing: grayscale;
 }
 /* =====================[ FIM TRECHO 1 ]===================== */
-/* =====================[ FIM TRECHO 1 ]===================== */
 
 
 /* =====================[ TRECHO 2: STAGE E CONTAINER MOBILE FULLSCREEN ]===================== */
@@ -143,7 +142,6 @@ body{
 .runline   { flex: 0 0 var(--h-run); min-height: var(--h-run); }
 .actions   { flex: 0 0 var(--h-act); min-height: var(--h-act); }
 .log       { flex: 1 1 auto; min-height: var(--h-log-min); }
-/* =====================[ FIM TRECHO 2 ]===================== */
 /* =====================[ FIM TRECHO 2 ]===================== */
 
 
@@ -340,7 +338,6 @@ body{
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   border-radius: inherit;
 }
-/* =====================[ FIM TRECHO 3 ]===================== */
 /* =====================[ FIM TRECHO 3 ]===================== */
 
 /* =====================[ TRECHO 4: BARRAS DE PROGRESSO (COMPARTILHADO) ]===================== */
@@ -848,7 +845,6 @@ body{
 .runline .runline-day{ color: var(--accent); }
 .runline .runline-floor{ text-align: right; color: var(--warm); }
 /* =====================[ FIM TRECHO 7.1 ]===================== */
-/* =====================[ FIM TRECHO 7.1 ]===================== */
 
 
 /* =====================[ TRECHO 8: AÇÕES PRINCIPAIS ]===================== */
@@ -900,7 +896,6 @@ body{
   color: rgba(255,255,255,0.82);
 }
 /* =====================[ FIM TRECHO 8 ]===================== */
-/* =====================[ FIM TRECHO 8 ]===================== */
 
 /* =====================[ TRECHO 9: LOG (VISÍVEL NO MOBILE, SEM CORTAR) ]===================== */
 .log{
@@ -948,7 +943,6 @@ body{
 .log-line[data-sev="info"]{ border-left-color: var(--sev-info); }
 .log-line[data-sev="mod"] { border-left-color: var(--sev-mod);  }
 .log-line[data-sev="crit"]{ border-left-color: var(--sev-crit); }
-/* =====================[ FIM TRECHO 9 ]===================== */
 /* =====================[ FIM TRECHO 9 ]===================== */
 
 /* =====================[ TRECHO 11: OVERLAY DE LANDSCAPE (BLOQUEIO) ]===================== */

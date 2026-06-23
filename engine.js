@@ -14,7 +14,8 @@ import {
   removeModifierById, removeModifiersBySource, removeModifiersByTag,
   addDay, getDay, setDay, initPlayerDefaults, clearAllModifiers,
   getEffectiveStatus, getEffectiveStatusMax, getEffectiveAtributo, getActiveCombatSkill,
-  getCurrentFloor, setCurrentFloor, setSaveSlot, createFreshSeedForCurrentSlot, clearLogEntries
+  getCurrentFloor, setCurrentFloor, setSaveSlot, createFreshSeedForCurrentSlot, clearLogEntries,
+  clearSaveSlot, setSaveCheckpointAvailable
 } from './state.js';
 import { setActionLabel, enableAction, getActionLabel, renderLog, setRunlineDay, setRunlineFloor, renderHUD } from './ui.js';
 import { showRoomPanel, showEnemyPanel } from './scene_panel.js';
@@ -93,10 +94,6 @@ function pickRoomDescVariant(roomId) {
 function isTrapRoom(roomId)    { return String(roomId) === 'sala_armadilha'; }
 function isCombatRoom(roomId)  { return isCombatEncounterRoom(roomId); }
 function isGameOverRoom(roomId){ return String(roomId) === GAME_OVER_ROOM_ID; }
-
-function logRoomEntry() {
-  /* intencionalmente vazio (política minimalista de log) */
-}
 
 function invalidatePendingCombatResponse() {
   combatResponseSequence += 1;
@@ -293,6 +290,7 @@ function resetRunStateToFirstRoom() {
   resetFloorBossProgressInitial();
   resetActionUsageForToday();
   STATE.nextRoomEmptyChanceRealBoost = false;
+  setSaveCheckpointAvailable(false);
   clearTransientRoomState();
   STATE.currentRoomId = 'sala_vazia';
   setRunlineDay(getDay());
@@ -309,6 +307,7 @@ export function restartRun() {
 export function startNewGameForSlot(slot) {
   // [ALERTA DE MUDANÇA] Novo Jogo agora escolhe slot, gera seed nova do slot e cria a run inicial limpa antes do primeiro save.
   setSaveSlot(slot);
+  clearSaveSlot(slot);
   createFreshSeedForCurrentSlot();
   clearLogEntries();
   STATE.bootInitLogged = false;
@@ -349,6 +348,7 @@ function goToGameOver(cause = '') {
   STATE.gameOverCause = typeof cause === 'string' ? cause : '';
   if (isGameOverRoom(STATE.currentRoomId)) return true;
   clearTransientRoomState();
+  setSaveCheckpointAvailable(false);
   STATE.currentRoomId = GAME_OVER_ROOM_ID;
   renderRoom();
   return true;
@@ -974,7 +974,7 @@ function resolveCombatOutcome(outcome) {
       if (wonBossEncounter) {
         markFloorBossDefeated();
       }
-      STATE.nextRoomEmptyChanceRealBoost = true;
+      STATE.nextRoomEmptyChanceRealBoost = !wonBossEncounter;
       markCurrentCombatRoomCleared(wonBossEncounter ? 'boss' : 'normal');
       clearCombatEnemy();
       renderRoom();
@@ -1246,6 +1246,7 @@ function resolveExploreActionFlow(ctx) {
   if (!ctx || ctx.role !== 'explore') return exploreSummaryMsgs;
 
   const leavingBossCombatRoom = isClearedBossCombatRoom(STATE.currentRoomId);
+  const leavingSaveCheckpointRoom = STATE.saveCheckpointAvailable && String(STATE.currentRoomId || '') === 'sala_vazia';
   const exploreEnergyDelta = applyStatusAndGetRealDelta('energia', -EXPLORE_ENERGY_COST);
   if (exploreEnergyDelta !== 0) ctx.effectMsgs.push(`${exploreEnergyDelta >= 0 ? '+' : ''}${exploreEnergyDelta} Energia`);
 
@@ -1254,6 +1255,7 @@ function resolveExploreActionFlow(ctx) {
   resetActionUsageForToday();
 
   clearTransientRoomState();
+  if (leavingSaveCheckpointRoom) setSaveCheckpointAvailable(false);
 
   if (leavingBossCombatRoom) {
     const nextFloor = advanceToNextFloor();
@@ -1263,8 +1265,10 @@ function resolveExploreActionFlow(ctx) {
     clearTransientRoomState();
   }
 
-  const nextRoomId = pickNextRoomId();
+  const nextRoomId = leavingBossCombatRoom ? 'sala_vazia' : pickNextRoomId();
   STATE.currentRoomId = nextRoomId;
+  if (leavingBossCombatRoom) STATE.nextRoomEmptyChanceRealBoost = false;
+  setSaveCheckpointAvailable(leavingBossCombatRoom && String(nextRoomId || '') === 'sala_vazia');
   if (String(nextRoomId || '') !== 'sala_combate') {
     clearClearedCombatRoom();
   }

@@ -147,12 +147,4 @@ export function showEnemyPanel(enemy, { backgroundUrl = null } = {}) {
   setSceneMode('enemy');
 }
 
-export function clearScenePanel() {
-  if (!ensureElements()) return;
-  if (els.roomTitle) els.roomTitle.textContent = '';
-  if (els.roomDesc) els.roomDesc.textContent = '';
-  resetEnemyPanel();
-  setSceneBackground(null);
-  setSceneMode('room');
-}
 /* =====================[ FIM TRECHO 1 ]===================== */

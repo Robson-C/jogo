@@ -123,10 +123,6 @@ export function ensureCombatFlowState() {
   return encounter.combat;
 }
 
-export function getCombatFlowState() {
-  return ensureCombatFlowState();
-}
-
 export function isPlayerCombatTurn() {
   const combat = ensureCombatFlowState();
   return !!(combat && combat.turn === 'player');
